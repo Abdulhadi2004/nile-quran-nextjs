@@ -49,7 +49,7 @@ export default function ProfileActivityList({ activities, emptyMessage }: Props)
             {/* Activity info */}
             <div className="flex-1 min-w-0 flex flex-col gap-0.5">
               <p className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate`}>
-                {activity.category_name || `تصنيف ${toArabicDigits(activity.category)}`}
+                {activity.category_name || `تصنيف رقم ${toArabicDigits(activity.category)}`}
               </p>
               <div className="flex items-center gap-1.5">
                 <Calendar className="w-3 h-3 text-[#043F2E]/40" strokeWidth={2.2} />

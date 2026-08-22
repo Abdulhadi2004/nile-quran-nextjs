@@ -7,7 +7,11 @@ import {
   getProfileCategories,
   getSupervisedStudents,
   getStudentRank,
+  getUserPointsForMonth,
+  getCirclePeers,
+  type CirclePeer,
 } from "@/actions/profile";
+import { gregorianToHijri } from "@tabby_ai/hijri-converter";
 
 import { Lalezar, Tajawal } from "next/font/google";
 import { ArrowRight, Shield, BookOpen } from "lucide-react";
@@ -35,7 +39,7 @@ const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
 export const metadata: Metadata = {
   title: "الملف الشخصي",
-  description: "عرض الملف الشخصي للمستخدمين في مقرأة النيل",
+  description: "عرض الملف الشخصي لأعضاء مقرأة النيل",
   robots: { index: false, follow: false },
 };
 
@@ -71,14 +75,14 @@ export default async function ProfilePage({
             تعذّر تحميل الملف الشخصي
           </h1>
           <p className={`${tajawal.className} text-sm text-[#043F2E]/60`}>
-            {profileResult.error || "لم نتمكن من العثور على هذا المستخدم"}
+            {profileResult.error || "لم نعثر على هذا العضو"}
           </p>
           <Link
             href="/"
             className={`${tajawal.className} inline-flex items-center gap-2 h-11 px-5 bg-[#043F2E] text-white rounded-xl text-sm font-bold hover:bg-[#065f46] transition-colors`}
           >
             <ArrowRight className="w-4 h-4" strokeWidth={2.4} />
-            العودة للرئيسية
+            العودة إلى الرئيسية
           </Link>
         </div>
       </div>
@@ -99,17 +103,9 @@ export default async function ProfilePage({
   }
 
   // Enrich activities with category names (values come from the API, not hard-coded)
-  let enrichedActivities: UserActivity[] = activities;
   const categoriesResult = await getProfileCategories();
   const categories = categoriesResult.success ? (categoriesResult.data ?? []) : [];
-  if (categories.length > 0) {
-    const catMap = new Map(categories.map((c) => [c.id, c]));
-    enrichedActivities = activities.map((a) => ({
-      ...a,
-      category_name: catMap.get(a.category)?.name,
-      points: (catMap.get(a.category)?.value ?? 0) * a.multiplier,
-    }));
-  }
+  const enrichedActivities = enrichActivities(activities, categories);
 
   // Fetch supervisor info (id + full name) for clickable link
   let supervisorInfo: { id: number; fullName: string; username: string } | null = null;
@@ -151,7 +147,27 @@ export default async function ProfilePage({
     const multiSection = [isStudent, isSupervisor].filter(Boolean).length > 1;
 
     if (isStudent) {
-      const rankResult = await getStudentRank(targetUser.id);
+      // The dashboard speaks about one Hijri month, so it opens on the current one
+      const today = new Date();
+      const hijriToday = gregorianToHijri({
+        year: today.getFullYear(),
+        month: today.getMonth() + 1,
+        day: today.getDate(),
+      });
+
+      const [monthResult, rankResult, peersResult] = await Promise.all([
+        getUserPointsForMonth(targetUser.id, hijriToday.year, hijriToday.month),
+        getStudentRank(targetUser.id, hijriToday.year, hijriToday.month),
+        targetUser.supervisor
+          ? getCirclePeers(targetUser.supervisor, targetUser.id)
+          : Promise.resolve({ success: true as const, data: [] as CirclePeer[] }),
+      ]);
+
+      const monthActivities = enrichActivities(
+        monthResult.success ? (monthResult.data?.activities ?? []) : [],
+        categories,
+      );
+
       sections.push(
         <section key="student" className="flex flex-col gap-4">
           {multiSection && (
@@ -160,9 +176,14 @@ export default async function ProfilePage({
             </SectionTitle>
           )}
           <StudentProfileView
-            points={points}
-            activities={enrichedActivities}
-            rank={rankResult.success ? rankResult.data : null}
+            userId={targetUser.id}
+            initialYear={hijriToday.year}
+            initialMonth={hijriToday.month}
+            initialPoints={monthResult.success ? (monthResult.data?.points ?? 0) : 0}
+            initialActivities={monthActivities}
+            initialRank={rankResult.success ? rankResult.data : null}
+            categories={categories}
+            peers={peersResult.success ? (peersResult.data ?? []) : []}
             supervisorName={supervisorInfo?.fullName || targetUser.supervisor || undefined}
             supervisorId={supervisorInfo?.id}
             referrerName={referrerInfo?.fullName || targetUser.referrer || undefined}
@@ -186,7 +207,11 @@ export default async function ProfilePage({
               لوحة المشرف
             </SectionTitle>
           )}
-          <ModeratorProfileView students={students} categories={categories} />
+          <ModeratorProfileView
+            students={students}
+            categories={categories}
+            viewerIsAdmin={isAdmin}
+          />
         </section>,
       );
     }
@@ -272,12 +297,15 @@ export default async function ProfilePage({
                 {toArabicDigits(points)}
               </span>
             </div>
-            <div className="bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 flex flex-col gap-1">
-              <span className={`${tajawal.className} text-[11px] font-medium text-[#043F2E]/50`}>الأنشطة</span>
-              <span className={`${lalezar.className} text-2xl text-[#043F2E]`}>
-                {toArabicDigits(visibility.showDetailedActivities ? activities.length : 0)}
-              </span>
-            </div>
+            {/* Hidden activities are hidden — printing ٠ would claim this member did nothing */}
+            {visibility.showDetailedActivities && (
+              <div className="bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 flex flex-col gap-1">
+                <span className={`${tajawal.className} text-[11px] font-medium text-[#043F2E]/50`}>الأنشطة</span>
+                <span className={`${lalezar.className} text-2xl text-[#043F2E]`}>
+                  {toArabicDigits(activities.length)}
+                </span>
+              </div>
+            )}
             <div className="bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 flex flex-col gap-1">
               <span className={`${tajawal.className} text-[11px] font-medium text-[#043F2E]/50`}>الدور</span>
               <div className="flex items-center gap-1.5 flex-wrap pt-1">
@@ -311,6 +339,20 @@ export default async function ProfilePage({
       </div>
     </div>
   );
+}
+
+// Category names and point values come from the API — never hard-coded here
+function enrichActivities(
+  activities: { id: number; category: number; date: string; multiplier: number }[],
+  categories: { id: number; name: string; value: number }[],
+): UserActivity[] {
+  if (categories.length === 0) return activities;
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  return activities.map((a) => ({
+    ...a,
+    category_name: byId.get(a.category)?.name,
+    points: (byId.get(a.category)?.value ?? 0) * a.multiplier,
+  }));
 }
 
 function SectionTitle({

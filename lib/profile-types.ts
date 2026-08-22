@@ -40,6 +40,7 @@ export interface SupervisedStudent {
   points: number;
   activities_count: number;
   weekly_activities_count: number;
+  recited_this_week: boolean;
 }
 
 // ===============================
@@ -51,7 +52,9 @@ export interface SupervisedStudent {
 // students, so this list is what both the profile UI and its server actions
 // enforce; keep them reading the same constant.
 
-export const SUPERVISOR_MANAGED_CATEGORY_IDS = [4, 3];
+export const CAT_RECITATION = 4; // تسميع القرآن
+export const CAT_QURAN_READING = 3; // قراءة القرآن
+export const SUPERVISOR_MANAGED_CATEGORY_IDS = [CAT_RECITATION, CAT_QURAN_READING];
 
 // ===============================
 // Role Helpers

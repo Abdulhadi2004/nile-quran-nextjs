@@ -73,7 +73,7 @@ function EditModal({
     if (email !== initialEmail) data.email = email;
 
     if (Object.keys(data).length === 0) {
-      setResult({ success: false, message: "لم تقم بأي تغييرات" });
+      setResult({ success: false, message: "لا توجد تغييرات لحفظها" });
       return;
     }
 
@@ -84,7 +84,7 @@ function EditModal({
         router.refresh();
         setTimeout(onClose, 1500);
       } else {
-        setResult({ success: false, message: res.error || "فشل تحديث البيانات" });
+        setResult({ success: false, message: res.error || "تعذّر تحديث البيانات" });
       }
     });
   };

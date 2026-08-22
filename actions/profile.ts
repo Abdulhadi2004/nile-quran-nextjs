@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { unstable_cache } from "next/cache";
 import { gregorianToHijri, hijriToGregorian } from "@tabby_ai/hijri-converter";
 import { getHijriMonthDays } from "@/lib/utils";
-import { SUPERVISOR_MANAGED_CATEGORY_IDS } from "@/lib/profile-types";
+import { SUPERVISOR_MANAGED_CATEGORY_IDS, CAT_RECITATION } from "@/lib/profile-types";
 
 const API_BASE = process.env.BASE_URL;
 
@@ -186,17 +186,106 @@ export async function getUserProfile(
 }
 
 // ===============================
+// Get One Hijri Month's Points
+// ===============================
+// `/users/{id}/points/` without a date range returns everything since the member
+// joined. The profile talks about "this month", so it has to ask for the month.
+
+export async function getUserPointsForMonth(
+  userId: number,
+  hijriYear: number,
+  hijriMonth: number,
+): Promise<FetchResult<{ points: number; activities: ApiActivity[] }>> {
+  try {
+    const token = await getToken();
+    if (!token) throw new Error("No access token");
+
+    const monthDays = getHijriMonthDays(hijriYear, hijriMonth);
+    const start = toIsoDate(hijriToGregorian({ year: hijriYear, month: hijriMonth, day: 1 }));
+    const end = toIsoDate(
+      hijriToGregorian({ year: hijriYear, month: hijriMonth, day: monthDays }),
+    );
+
+    const data = await fetchJson<ApiPoints>(
+      `${API_BASE}api/v1/users/${userId}/points/?date_after=${start}&date_before=${end}`,
+      token,
+    );
+
+    return {
+      success: true,
+      data: { points: data.points ?? 0, activities: data.activities ?? [] },
+    };
+  } catch (error) {
+    console.error("Error fetching month points:", error);
+    return { success: false, error: "تعذّر تحميل نقاط الشهر" };
+  }
+}
+
+// ===============================
+// Get Circle Peers (same recitation supervisor)
+// ===============================
+
+export interface CirclePeer {
+  id: number;
+  fullName: string;
+}
+
+export async function getCirclePeers(
+  supervisorUsername: string,
+  excludeUserId: number,
+): Promise<FetchResult<CirclePeer[]>> {
+  try {
+    const token = await getToken();
+    if (!token) throw new Error("No access token");
+
+    const data = await fetchJson<{ results: ApiUser[] }>(
+      `${API_BASE}api/v1/users/?supervisor=${encodeURIComponent(supervisorUsername)}&group=Student`,
+      token,
+    );
+
+    // The API hands back each peer's email; it has no business reaching the browser
+    const peers = (data.results || [])
+      .filter((u) => u.id !== excludeUserId)
+      .map((u) => ({
+        id: u.id,
+        fullName: `${u.first_name} ${u.last_name}`.trim() || u.username,
+      }))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, "ar"));
+
+    return { success: true, data: peers };
+  } catch (error) {
+    console.error("Error fetching circle peers:", error);
+    return { success: false, error: "تعذّر تحميل زملاء الحلقة" };
+  }
+}
+
+// ===============================
 // Get Student Rank (monthly leaderboard position)
 // ===============================
 
 export async function getStudentRank(
   userId: number,
+  hijriYear?: number,
+  hijriMonth?: number,
 ): Promise<FetchResult<number | null>> {
   try {
     const token = await getToken();
     if (!token) throw new Error("No access token");
 
-    const { start, end } = getCurrentHijriMonthRange();
+    const { start, end } =
+      hijriYear && hijriMonth
+        ? {
+            start: toIsoDate(hijriToGregorian({ year: hijriYear, month: hijriMonth, day: 1 })),
+            end: toIsoDate(
+              hijriToGregorian({
+                year: hijriYear,
+                month: hijriMonth,
+                day: getHijriMonthDays(hijriYear, hijriMonth),
+              }),
+            ),
+          }
+        : getCurrentHijriMonthRange();
+
     const data = await fetchJson<{ results: ApiPoints[] } | ApiPoints[]>(
       `${API_BASE}api/v1/users/points/?date_after=${start}&date_before=${end}&ordering=-points`,
       token,
@@ -205,6 +294,10 @@ export async function getStudentRank(
     const results = Array.isArray(data) ? data : (data.results ?? []);
     const me = results.find((p) => p.user === userId);
     if (!me) return { success: true, data: null };
+
+    // A month with no points earns no standing — in a month where nobody scored,
+    // the tie rule below would otherwise hand everyone first place
+    if ((me.points ?? 0) <= 0) return { success: true, data: null };
 
     // Rank = 1 + number of students with strictly more points (ties share rank)
     const rank = 1 + results.filter((p) => (p.points ?? 0) > (me.points ?? 0)).length;
@@ -235,6 +328,7 @@ export async function getSupervisedStudents(
       points: number;
       activities_count: number;
       weekly_activities_count: number;
+      recited_this_week: boolean;
     }>
   >
 > {
@@ -244,10 +338,12 @@ export async function getSupervisedStudents(
 
     const { start, end } = getCurrentHijriWeekRange();
 
-    // Students supervised by this moderator + all-time points + current-week points
-    const [data, pointsData, weekPointsData] = await Promise.all([
+    // Students supervised by this moderator, their all-time points, this week's
+    // activity, and this week's recitation on its own — the last one answers
+    // "who has not recited yet", which is the supervisor's actual job.
+    const [data, pointsData, weekPointsData, weekRecitationData] = await Promise.all([
       fetchJson<{ results: ApiUser[] }>(
-        `${API_BASE}api/v1/users/?supervisor=${supervisorUsername}&group=Student`,
+        `${API_BASE}api/v1/users/?supervisor=${encodeURIComponent(supervisorUsername)}&group=Student`,
         token,
       ),
       fetchJson<{ results: ApiPoints[] } | ApiPoints[]>(
@@ -258,6 +354,10 @@ export async function getSupervisedStudents(
         `${API_BASE}api/v1/users/points/?date_after=${start}&date_before=${end}`,
         token,
       ),
+      fetchJson<{ results: ApiPoints[] } | ApiPoints[]>(
+        `${API_BASE}api/v1/users/points/?category=${CAT_RECITATION}&date_after=${start}&date_before=${end}`,
+        token,
+      ),
     ]);
 
     const normalize = (d: { results: ApiPoints[] } | ApiPoints[]): ApiPoints[] =>
@@ -265,10 +365,12 @@ export async function getSupervisedStudents(
 
     const allPoints = normalize(pointsData);
     const weekPoints = normalize(weekPointsData);
+    const weekRecitation = normalize(weekRecitationData);
 
     const students = data.results.map((student) => {
       const pointsInfo = allPoints.find((p) => p.user === student.id);
       const weekInfo = weekPoints.find((p) => p.user === student.id);
+      const recitationInfo = weekRecitation.find((p) => p.user === student.id);
       return {
         id: student.id,
         username: student.username,
@@ -278,6 +380,7 @@ export async function getSupervisedStudents(
         points: pointsInfo?.points ?? 0,
         activities_count: pointsInfo?.activities?.length ?? 0,
         weekly_activities_count: weekInfo?.activities?.length ?? 0,
+        recited_this_week: (recitationInfo?.activities?.length ?? 0) > 0,
       };
     });
 
@@ -318,7 +421,7 @@ export async function updateUser(
 
     if (!res.ok) {
       const text = await res.text();
-      let errorMsg = `فشل تحديث البيانات (${res.status})`;
+      let errorMsg = `تعذّر تحديث البيانات (${res.status})`;
       try {
         const errData = JSON.parse(text);
         errorMsg = errData?.detail || errData?.email?.[0] || errData?.first_name?.[0] || errorMsg;
@@ -393,7 +496,7 @@ export async function deleteStudentActivity(
       token,
     );
     if (!SUPERVISOR_MANAGED_CATEGORY_IDS.includes(activity.category)) {
-      return { success: false, error: "هذا النشاط يُدار من لوحة التحكم" };
+      return { success: false, error: "هذا النوع من الأنشطة يسجّله المدراء" };
     }
 
     const res = await fetch(
@@ -411,7 +514,7 @@ export async function deleteStudentActivity(
 
     if (!res.ok) {
       const text = await res.text();
-      let errorMsg = `فشل حذف النشاط (${res.status})`;
+      let errorMsg = `تعذّر حذف النشاط (${res.status})`;
       try {
         const data = JSON.parse(text);
         errorMsg = data?.detail || data?.error || errorMsg;
@@ -467,7 +570,7 @@ export async function addStudentActivity(
 
     // Same scope as the delete path — recitation and reading only
     if (!SUPERVISOR_MANAGED_CATEGORY_IDS.includes(categoryId)) {
-      return { success: false, error: "هذا النشاط يُدار من لوحة التحكم" };
+      return { success: false, error: "هذا النوع من الأنشطة يسجّله المدراء" };
     }
 
     const date = new Date().toISOString();
@@ -484,7 +587,7 @@ export async function addStudentActivity(
 
     if (!res.ok) {
       const text = await res.text();
-      let errorMsg = `فشل إضافة النشاط (${res.status})`;
+      let errorMsg = `تعذّر تسجيل النشاط (${res.status})`;
       try {
         const data = JSON.parse(text);
         errorMsg = data?.detail || data?.error || errorMsg;

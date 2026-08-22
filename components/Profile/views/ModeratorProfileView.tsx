@@ -21,6 +21,7 @@ import {
   ClipboardList,
   Calendar,
   AlertCircle,
+  BellRing,
 } from "lucide-react";
 import Link from "next/link";
 import { toArabicDigits, formatArabicDate } from "@/lib/utils";
@@ -44,6 +45,15 @@ export interface ActivityCategory {
 interface Props {
   students: SupervisedStudent[];
   categories: ActivityCategory[];
+  /**
+   * Whether the person reading this panel is also an Admin.
+   *
+   * Only copy, never permissions. /control-board is Admin-only — its page guard
+   * redirects anyone without the Admin group — so only an Admin may be pointed at
+   * it. Defaults to false so a plain recitation supervisor is never sent to a page
+   * that would turn them away.
+   */
+  viewerIsAdmin?: boolean;
 }
 
 const CAT_TASMEE = 4;
@@ -55,7 +65,11 @@ type ActivityItem = {
   multiplier: number;
 };
 
-export default function ModeratorProfileView({ students, categories }: Props) {
+export default function ModeratorProfileView({
+  students,
+  categories,
+  viewerIsAdmin = false,
+}: Props) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"points" | "name">("points");
   const [addActivityStudent, setAddActivityStudent] = useState<SupervisedStudent | null>(null);
@@ -97,15 +111,82 @@ export default function ModeratorProfileView({ students, categories }: Props) {
     return { total, totalPoints, avg, activeStudents };
   }, [students]);
 
+  // Whoever has not recited yet this week is the supervisor's actual work
+  const needFollowUp = useMemo(
+    () =>
+      students
+        .filter((s) => !s.recited_this_week)
+        .sort((a, b) => {
+          const nameA = `${a.first_name} ${a.last_name}`.trim();
+          const nameB = `${b.first_name} ${b.last_name}`.trim();
+          return nameA.localeCompare(nameB, "ar");
+        }),
+    [students],
+  );
+
   return (
     <div className="flex flex-col gap-6" dir="rtl">
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="الطلاب المشرف عليهم" value={toArabicDigits(stats.total)} icon={<Users className="w-5 h-5" strokeWidth={2.2} />} accent />
-        <StatCard label="إجمالي نقاط مجموعة التسميع" value={toArabicDigits(stats.totalPoints)} icon={<TrendingUp className="w-5 h-5" strokeWidth={2.2} />} />
+        <StatCard label="طلاب حلقتي" value={toArabicDigits(stats.total)} icon={<Users className="w-5 h-5" strokeWidth={2.2} />} accent />
+        <StatCard label="إجمالي نقاط الحلقة" value={toArabicDigits(stats.totalPoints)} icon={<TrendingUp className="w-5 h-5" strokeWidth={2.2} />} />
         <StatCard label="متوسط النقاط" value={toArabicDigits(stats.avg)} icon={<Award className="w-5 h-5" strokeWidth={2.2} />} />
-        <StatCard label="الطلاب النشطون" value={toArabicDigits(stats.activeStudents)} icon={<BookOpen className="w-5 h-5" strokeWidth={2.2} />} />
+        <StatCard label="الطلاب النشطون هذا الأسبوع" value={toArabicDigits(stats.activeStudents)} icon={<BookOpen className="w-5 h-5" strokeWidth={2.2} />} />
       </div>
+
+      {/* Who has not recited this week */}
+      {students.length > 0 && (
+        <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm p-5 md:p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 rounded-lg bg-[#F7FBEA] text-[#043F2E]/70 flex items-center justify-center shrink-0">
+              <BellRing className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />
+            </div>
+            <h3 className={`${lalezar.className} text-lg text-[#043F2E] leading-none`}>
+              من يحتاج إلى متابعة
+            </h3>
+          </div>
+          <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 mb-4`}>
+            {needFollowUp.length > 0
+              ? `لم يسجّلوا تسميعًا هذا الأسبوع — ${toArabicDigits(needFollowUp.length)} من ${toArabicDigits(students.length)}`
+              : "متابعة التسميع الأسبوعي"}
+          </p>
+
+          {needFollowUp.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {needFollowUp.map((student) => {
+                const fullName = `${student.first_name} ${student.last_name}`.trim() || student.username;
+                return (
+                  <div
+                    key={student.id}
+                    className="flex items-center gap-3 bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-2.5"
+                  >
+                    <Link
+                      href={`/profile/${student.id}`}
+                      className={`${tajawal.className} flex-1 min-w-0 text-sm font-bold text-[#043F2E] truncate hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2 rounded`}
+                    >
+                      {fullName}
+                    </Link>
+                    <button
+                      onClick={() => setAddActivityStudent(student)}
+                      className={`${tajawal.className} shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-[#065f46] text-[#BEE663] text-xs font-bold whitespace-nowrap hover:bg-[#043F2E] transition-colors`}
+                    >
+                      <Plus className="w-3.5 h-3.5 shrink-0" strokeWidth={2.4} aria-hidden="true" />
+                      تسجيل تسميع
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-[#DEFF90] border border-[#9ADD00]/40 rounded-2xl px-4 py-3">
+              <Check className="w-4 h-4 text-[#043F2E] shrink-0" strokeWidth={2.5} aria-hidden="true" />
+              <p className={`${tajawal.className} text-sm font-medium text-[#043F2E]`}>
+                كل طلاب حلقتك سمّعوا هذا الأسبوع، بارك الله فيهم
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Students list */}
       <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm overflow-hidden">
@@ -136,7 +217,7 @@ export default function ModeratorProfileView({ students, categories }: Props) {
                   : "bg-white text-[#043F2E] hover:bg-[#BEE663] shadow-sm"
               }`}
             >
-              الأعلى نقاطاً
+              الأعلى نقاطًا
             </button>
             <button
               onClick={() => setSortBy("name")}
@@ -161,7 +242,7 @@ export default function ModeratorProfileView({ students, categories }: Props) {
               {search ? "لا توجد نتائج" : "لا يوجد طلاب"}
             </h3>
             <p className={`${tajawal.className} text-sm text-[#043F2E]/60`}>
-              {search ? "جرب البحث بكلمة مختلفة" : "لم يتم إسناد أي طلاب لإشرافك بعد"}
+              {search ? "جرّب البحث بكلمة مختلفة" : "لم يُسنَد إليك أي طالب بعد"}
             </p>
           </div>
         ) : (
@@ -172,7 +253,7 @@ export default function ModeratorProfileView({ students, categories }: Props) {
               <div className="w-[170px] shrink-0"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الطالب</span></div>
               <div className="w-[90px] shrink-0 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الأنشطة</span></div>
               <div className="flex-1 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>النقاط</span></div>
-              <div className="w-[250px] shrink-0 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>إجراءات</span></div>
+              <div className="w-[250px] shrink-0 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الإجراءات</span></div>
             </div>
 
             <div className="hidden md:flex flex-col">
@@ -202,7 +283,7 @@ export default function ModeratorProfileView({ students, categories }: Props) {
                     {/* Activities count */}
                     <div className="w-[90px] shrink-0 text-center">
                       <span className={`${tajawal.className} text-xs font-medium text-[#043F2E]/60`}>
-                        {toArabicDigits(student.activities_count)} نشاط
+                        {toArabicDigits(student.activities_count)}
                       </span>
                     </div>
 
@@ -227,7 +308,7 @@ export default function ModeratorProfileView({ students, categories }: Props) {
                         className={`${tajawal.className} inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-[#F7FBEA] border border-[#043F2E]/15 text-[#043F2E] text-xs font-bold whitespace-nowrap hover:bg-[#BEE663]/30 transition-colors`}
                       >
                         <ClipboardList className="w-3.5 h-3.5 shrink-0" strokeWidth={2.4} />
-                        سجل الأنشطة
+                        سجلّ الأنشطة
                       </button>
                       <Link
                         href={`/profile/${student.id}`}
@@ -257,7 +338,7 @@ export default function ModeratorProfileView({ students, categories }: Props) {
                       <div className="flex-1 min-w-0">
                         <p className={`${tajawal.className} text-base font-bold text-[#043F2E] truncate`}>{fullName || student.username}</p>
                         <p className={`${tajawal.className} text-[10px] text-[#043F2E]/40`}>
-                          @{student.username} · {toArabicDigits(student.activities_count)} نشاط
+                          @{student.username} · الأنشطة: {toArabicDigits(student.activities_count)}
                         </p>
                       </div>
                       <span className={`${tajawal.className} shrink-0 min-w-[48px] h-9 px-3 flex items-center justify-center rounded-xl font-bold text-sm ${student.points > 0 ? "bg-[#BEE663] text-[#043F2E]" : "bg-white text-[#043F2E]/40 border border-[#043F2E]/10"}`}>
@@ -278,7 +359,7 @@ export default function ModeratorProfileView({ students, categories }: Props) {
                         className={`${tajawal.className} flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-white border border-[#043F2E]/15 text-[#043F2E] text-xs font-bold hover:bg-[#BEE663]/30 transition-colors`}
                       >
                         <ClipboardList className="w-3.5 h-3.5" strokeWidth={2.4} />
-                        السجل
+                        السجلّ
                       </button>
                       <Link
                         href={`/profile/${student.id}`}
@@ -311,6 +392,7 @@ export default function ModeratorProfileView({ students, categories }: Props) {
           key={manageStudent.id}
           student={manageStudent}
           categories={categories}
+          viewerIsAdmin={viewerIsAdmin}
           onClose={closeManage}
         />
       )}
@@ -324,10 +406,12 @@ export default function ModeratorProfileView({ students, categories }: Props) {
 function ActivityLogModal({
   student,
   categories,
+  viewerIsAdmin,
   onClose,
 }: {
   student: SupervisedStudent;
   categories: ActivityCategory[];
+  viewerIsAdmin: boolean;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -396,7 +480,7 @@ function ActivityLogModal({
         setConfirmingId(null);
         router.refresh();
       } else {
-        setError(res.error || "فشل حذف النشاط");
+        setError(res.error || "تعذّر حذف النشاط");
       }
     } catch {
       setError("تعذّر الاتصال، حاول مرة أخرى");
@@ -410,7 +494,7 @@ function ActivityLogModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`سجل أنشطة ${fullName}`}
+        aria-label={`سجلّ أنشطة ${fullName}`}
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[440px] max-h-[85vh] overflow-y-auto bg-white rounded-3xl border border-[#043F2E]/10 shadow-lg p-5 flex flex-col gap-4"
         dir="rtl"
@@ -421,7 +505,7 @@ function ActivityLogModal({
             <div className="w-9 h-9 rounded-xl bg-[#043F2E] flex items-center justify-center">
               <ClipboardList className="w-4 h-4 text-[#BEE663]" strokeWidth={2.4} />
             </div>
-            <h3 className={`${lalezar.className} text-lg text-[#043F2E]`}>سجل الأنشطة</h3>
+            <h3 className={`${lalezar.className} text-lg text-[#043F2E]`}>سجلّ الأنشطة</h3>
           </div>
           <button
             ref={closeRef}
@@ -445,9 +529,13 @@ function ActivityLogModal({
           </div>
         </div>
 
-        {/* Scope note — the log deliberately shows only what a supervisor may change */}
+        {/* Scope note — the log deliberately shows only what a supervisor may change.
+            The control board is named only for a reader who can actually open it. */}
         <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 leading-relaxed`}>
-          تظهر هنا أنشطة التسميع والقراءة فقط، وهي ما يمكنك إضافته أو حذفه. باقي الأنشطة تُدار من لوحة التحكم.
+          تظهر هنا أنشطة التسميع والقراءة فقط، وهي ما يمكنك تسجيله أو حذفه لطلابك.{" "}
+          {viewerIsAdmin
+            ? "أما باقي الأنشطة فتُسجَّل من لوحة التحكم."
+            : "أما باقي الأنشطة فيسجّلها المدراء."}
         </p>
 
         {/* Error */}
@@ -577,12 +665,12 @@ function AddActivityModal({
       if (res.success) {
         setResult({
           success: true,
-          message: `تم تسجيل ${selectedCategory?.name ?? "النشاط"} لـ ${fullName}`,
+          message: `تم تسجيل ${selectedCategory?.name ?? "النشاط"} باسم ${fullName}`,
         });
         router.refresh();
         setTimeout(onClose, 1500);
       } else {
-        setResult({ success: false, message: res.error || "فشل تسجيل النشاط" });
+        setResult({ success: false, message: res.error || "تعذّر تسجيل النشاط" });
       }
     });
   };
@@ -592,7 +680,7 @@ function AddActivityModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="إضافة نشاط"
+        aria-label="تسجيل نشاط"
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[380px] bg-white rounded-3xl border border-[#043F2E]/10 shadow-lg p-5 flex flex-col gap-5"
         dir="rtl"
@@ -603,7 +691,7 @@ function AddActivityModal({
             <div className="w-9 h-9 rounded-xl bg-[#065f46] flex items-center justify-center">
               <Plus className="w-4 h-4 text-[#BEE663]" strokeWidth={2.4} />
             </div>
-            <h3 className={`${lalezar.className} text-lg text-[#043F2E]`}>إضافة نشاط</h3>
+            <h3 className={`${lalezar.className} text-lg text-[#043F2E]`}>تسجيل نشاط</h3>
           </div>
           <button onClick={onClose} disabled={isPending} className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center text-[#043F2E]/60 hover:bg-[#F7FBEA] hover:text-[#043F2E] transition-colors disabled:opacity-50">
             <X className="w-4 h-4" strokeWidth={2.2} />
@@ -643,7 +731,7 @@ function AddActivityModal({
                 )}
                 {cat.name}
                 <span className={`text-[10px] font-medium ${categoryId === cat.id ? "text-[#BEE663]" : "text-[#043F2E]/40"}`}>
-                  +{toArabicDigits(cat.value)} نقطة
+                  النقاط: +{toArabicDigits(cat.value)}
                 </span>
               </button>
             ))}
@@ -652,7 +740,7 @@ function AddActivityModal({
 
         {/* Points preview */}
         <div className="flex items-center justify-center gap-1.5">
-          <span className={`${tajawal.className} text-[11px] text-[#043F2E]/50`}>النقاط المسجلة:</span>
+          <span className={`${tajawal.className} text-[11px] text-[#043F2E]/50`}>النقاط المسجّلة:</span>
           <span className={`${tajawal.className} text-sm font-bold text-[#043F2E] bg-[#BEE663] rounded-full px-2 py-0.5`}>
             +{toArabicDigits(selectedCategory?.value ?? 0)}
           </span>
