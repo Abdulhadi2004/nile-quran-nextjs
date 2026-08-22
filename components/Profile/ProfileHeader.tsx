@@ -2,7 +2,7 @@ import { Lalezar, Tajawal } from "next/font/google";
 import { User, UserCheck } from "lucide-react";
 import Link from "next/link";
 import RoleBadge from "./RoleBadge";
-import type { RoleType } from "@/lib/profile-types";
+import { getRoles } from "@/lib/profile-types";
 
 const lalezar = Lalezar({ subsets: ["arabic"], weight: "400" });
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
@@ -17,21 +17,22 @@ interface Props {
   firstName: string;
   lastName: string;
   username: string;
-  role: RoleType;
-  isOwnProfile: boolean;
+  groups: string[];
   supervisor?: SupervisorInfo | null;
+  action?: React.ReactNode;
 }
 
 export default function ProfileHeader({
   firstName,
   lastName,
   username,
-  role,
-  isOwnProfile,
+  groups,
   supervisor,
+  action,
 }: Props) {
   const fullName = `${firstName} ${lastName}`.trim();
   const initials = `${firstName?.charAt(0) || ""}${lastName?.charAt(0) || ""}`.trim();
+  const roles = getRoles(groups);
 
   return (
     <div className="flex items-center gap-4 flex-wrap" dir="rtl">
@@ -43,20 +44,17 @@ export default function ProfileHeader({
       </div>
 
       {/* Name + Username + Supervisor */}
-      <div className="flex flex-col gap-1 min-w-0">
+      <div className="flex flex-col gap-1 min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className={`${lalezar.className} text-2xl md:text-3xl text-[#043F2E] leading-tight`}>
             {fullName || username}
           </h1>
-          <RoleBadge role={role} />
+          {roles.map((r) => (
+            <RoleBadge key={r} role={r} />
+          ))}
         </div>
         <p className={`${tajawal.className} text-sm text-[#043F2E]/50 font-medium`}>
           @{username}
-          {isOwnProfile && (
-            <span className="ml-2 text-[10px] font-bold text-[#043F2E] bg-[#BEE663]/30 px-1.5 py-0.5 rounded">
-              هذا أنت
-            </span>
-          )}
         </p>
 
         {/* Supervisor link — name only, clickable */}
@@ -72,6 +70,9 @@ export default function ProfileHeader({
           </Link>
         )}
       </div>
+
+      {/* Optional action (e.g. edit own data) */}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }

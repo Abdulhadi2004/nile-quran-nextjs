@@ -39,19 +39,7 @@ export interface SupervisedStudent {
   groups: string[];
   points: number;
   activities_count: number;
-}
-
-export interface AdminUserSummary {
-  id: number;
-  username: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  groups: string[];
-  supervisor: string | null;
-  referrer: string | null;
-  date_joined: string;
-  points: number;
+  weekly_activities_count: number;
 }
 
 // ===============================
@@ -62,6 +50,16 @@ export function getPrimaryRole(groups: string[]): RoleType {
   if (groups.includes("Admin")) return "Admin";
   if (groups.includes("Supervisor")) return "Supervisor";
   return "Student";
+}
+
+// All roles a user belongs to, highest first (a user can be e.g. Supervisor + Admin)
+export function getRoles(groups: string[]): RoleType[] {
+  const roles: RoleType[] = [];
+  if (groups.includes("Admin")) roles.push("Admin");
+  if (groups.includes("Supervisor")) roles.push("Supervisor");
+  if (groups.includes("Student")) roles.push("Student");
+  if (roles.length === 0) roles.push("Student");
+  return roles;
 }
 
 export function getRoleLabel(role: RoleType): string {

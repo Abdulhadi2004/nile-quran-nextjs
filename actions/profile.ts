@@ -2,8 +2,45 @@
 
 import { cookies } from "next/headers";
 import { unstable_cache } from "next/cache";
+import { gregorianToHijri, hijriToGregorian } from "@tabby_ai/hijri-converter";
+import { getHijriMonthDays } from "@/lib/utils";
 
 const API_BASE = process.env.BASE_URL;
+
+function toIsoDate(d: { year: number; month: number; day: number }): string {
+  return `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`;
+}
+
+// Current Hijri week range (same bucketing as the control board)
+function getCurrentHijriWeekRange(): { start: string; end: string } {
+  const now = new Date();
+  const hijri = gregorianToHijri({
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+  });
+  const week = hijri.day <= 28 ? Math.ceil(hijri.day / 7) : 5;
+  const monthDays = getHijriMonthDays(hijri.year, hijri.month);
+  const startHijriDay = (week - 1) * 7 + 1;
+  const endHijriDay = week < 5 ? week * 7 : monthDays;
+  const start = hijriToGregorian({ year: hijri.year, month: hijri.month, day: startHijriDay });
+  const end = hijriToGregorian({ year: hijri.year, month: hijri.month, day: endHijriDay });
+  return { start: toIsoDate(start), end: toIsoDate(end) };
+}
+
+// Current Hijri month range (same as the home leaderboard)
+function getCurrentHijriMonthRange(): { start: string; end: string } {
+  const now = new Date();
+  const hijri = gregorianToHijri({
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+  });
+  const monthDays = getHijriMonthDays(hijri.year, hijri.month);
+  const start = hijriToGregorian({ year: hijri.year, month: hijri.month, day: 1 });
+  const end = hijriToGregorian({ year: hijri.year, month: hijri.month, day: monthDays });
+  return { start: toIsoDate(start), end: toIsoDate(end) };
+}
 
 // ===============================
 // Types
@@ -148,39 +185,31 @@ export async function getUserProfile(
 }
 
 // ===============================
-// Get All Users with Roles (Admin only)
+// Get Student Rank (monthly leaderboard position)
 // ===============================
 
-export async function getAllUsersWithRoles(): Promise<
-  FetchResult<
-    Array<{
-      id: number;
-      username: string;
-      first_name: string;
-      last_name: string;
-      email: string;
-      groups: string[];
-      supervisor: string | null;
-      referrer: string | null;
-      date_joined: string;
-    }>
-  >
-> {
+export async function getStudentRank(
+  userId: number,
+): Promise<FetchResult<number | null>> {
   try {
     const token = await getToken();
     if (!token) throw new Error("No access token");
 
-    const data = await fetchJson<{ results: ApiUser[] }>(
-      `${API_BASE}api/v1/users/`,
+    const { start, end } = getCurrentHijriMonthRange();
+    const data = await fetchJson<{ results: ApiPoints[] } | ApiPoints[]>(
+      `${API_BASE}api/v1/users/points/?date_after=${start}&date_before=${end}&ordering=-points`,
       token,
     );
 
-    return {
-      success: true,
-      data: data.results,
-    };
+    const results = Array.isArray(data) ? data : (data.results ?? []);
+    const me = results.find((p) => p.user === userId);
+    if (!me) return { success: true, data: null };
+
+    // Rank = 1 + number of students with strictly more points (ties share rank)
+    const rank = 1 + results.filter((p) => (p.points ?? 0) > (me.points ?? 0)).length;
+    return { success: true, data: rank };
   } catch (error) {
-    console.error("Error fetching all users:", error);
+    console.error("Error fetching student rank:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
@@ -204,6 +233,7 @@ export async function getSupervisedStudents(
       groups: string[];
       points: number;
       activities_count: number;
+      weekly_activities_count: number;
     }>
   >
 > {
@@ -211,27 +241,33 @@ export async function getSupervisedStudents(
     const token = await getToken();
     if (!token) throw new Error("No access token");
 
-    // Fetch students supervised by this moderator
-    const data = await fetchJson<{ results: ApiUser[] }>(
-      `${API_BASE}api/v1/users/?supervisor=${supervisorUsername}&group=Student`,
-      token,
-    );
+    const { start, end } = getCurrentHijriWeekRange();
 
-    // Fetch points for all students
-    const pointsData = await fetchJson<{ results: ApiPoints[] } | ApiPoints[]>(
-      `${API_BASE}api/v1/users/points/`,
-      token,
-    );
+    // Students supervised by this moderator + all-time points + current-week points
+    const [data, pointsData, weekPointsData] = await Promise.all([
+      fetchJson<{ results: ApiUser[] }>(
+        `${API_BASE}api/v1/users/?supervisor=${supervisorUsername}&group=Student`,
+        token,
+      ),
+      fetchJson<{ results: ApiPoints[] } | ApiPoints[]>(
+        `${API_BASE}api/v1/users/points/`,
+        token,
+      ),
+      fetchJson<{ results: ApiPoints[] } | ApiPoints[]>(
+        `${API_BASE}api/v1/users/points/?date_after=${start}&date_before=${end}`,
+        token,
+      ),
+    ]);
 
-    let allPoints: ApiPoints[] = [];
-    if (Array.isArray(pointsData)) {
-      allPoints = pointsData;
-    } else if ("results" in pointsData && Array.isArray(pointsData.results)) {
-      allPoints = pointsData.results;
-    }
+    const normalize = (d: { results: ApiPoints[] } | ApiPoints[]): ApiPoints[] =>
+      Array.isArray(d) ? d : (d.results ?? []);
+
+    const allPoints = normalize(pointsData);
+    const weekPoints = normalize(weekPointsData);
 
     const students = data.results.map((student) => {
       const pointsInfo = allPoints.find((p) => p.user === student.id);
+      const weekInfo = weekPoints.find((p) => p.user === student.id);
       return {
         id: student.id,
         username: student.username,
@@ -240,6 +276,7 @@ export async function getSupervisedStudents(
         groups: student.groups,
         points: pointsInfo?.points ?? 0,
         activities_count: pointsInfo?.activities?.length ?? 0,
+        weekly_activities_count: weekInfo?.activities?.length ?? 0,
       };
     });
 
@@ -253,139 +290,6 @@ export async function getSupervisedStudents(
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
     };
-  }
-}
-
-// ===============================
-// Get Global Stats (Admin only)
-// ===============================
-
-export async function getGlobalStats(): Promise<FetchResult<{
-  totalUsers: number;
-  totalStudents: number;
-  totalSupervisors: number;
-  totalAdmins: number;
-  totalPoints: number;
-  avgPoints: number;
-  avgAttendance: number;
-}>> {
-  try {
-    const token = await getToken();
-    if (!token) throw new Error("No access token");
-
-    // Fetch all users
-    const usersData = await fetchJson<{ results: ApiUser[] }>(
-      `${API_BASE}api/v1/users/`,
-      token,
-    );
-    const allUsers = usersData.results || [];
-
-    // Fetch all points
-    const pointsData = await fetchJson<{ results: ApiPoints[] } | ApiPoints[]>(
-      `${API_BASE}api/v1/users/points/`,
-      token,
-    );
-    let allPoints: ApiPoints[] = [];
-    if (Array.isArray(pointsData)) {
-      allPoints = pointsData;
-    } else if ("results" in pointsData && Array.isArray(pointsData.results)) {
-      allPoints = pointsData.results;
-    }
-
-    const totalUsers = allUsers.length;
-    const totalStudents = allUsers.filter((u) => u.groups.includes("Student")).length;
-    const totalSupervisors = allUsers.filter((u) => u.groups.includes("Supervisor")).length;
-    const totalAdmins = allUsers.filter((u) => u.groups.includes("Admin")).length;
-    const totalPoints = allPoints.reduce((sum, p) => sum + (p.points ?? 0), 0);
-    const avgPoints = totalStudents > 0 ? Math.round(totalPoints / totalStudents) : 0;
-
-    // Calculate avg attendance: activities with category 1 (حضور خاطرة) or 6 (اجتماع)
-    let attendanceActivities = 0;
-    for (const p of allPoints) {
-      for (const a of p.activities) {
-        if (a.category === 1 || a.category === 6) {
-          attendanceActivities++;
-        }
-      }
-    }
-    const avgAttendance = totalStudents > 0
-      ? Math.min(Math.round((attendanceActivities / (totalStudents * 4)) * 100), 100)
-      : 0;
-
-    return {
-      success: true,
-      data: { totalUsers, totalStudents, totalSupervisors, totalAdmins, totalPoints, avgPoints, avgAttendance },
-    };
-  } catch (error) {
-    console.error("Error fetching global stats:", error);
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
-  }
-}
-
-// ===============================
-// Get Top Supervisors (Admin only)
-// ===============================
-
-export async function getTopSupervisors(): Promise<FetchResult<Array<{
-  id: number;
-  username: string;
-  fullName: string;
-  studentCount: number;
-  totalPoints: number;
-  avgPoints: number;
-}>>> {
-  try {
-    const token = await getToken();
-    if (!token) throw new Error("No access token");
-
-    // Fetch all users
-    const usersData = await fetchJson<{ results: ApiUser[] }>(
-      `${API_BASE}api/v1/users/`,
-      token,
-    );
-    const allUsers = usersData.results || [];
-
-    // Fetch all points
-    const pointsData = await fetchJson<{ results: ApiPoints[] } | ApiPoints[]>(
-      `${API_BASE}api/v1/users/points/`,
-      token,
-    );
-    let allPoints: ApiPoints[] = [];
-    if (Array.isArray(pointsData)) {
-      allPoints = pointsData;
-    } else if ("results" in pointsData && Array.isArray(pointsData.results)) {
-      allPoints = pointsData.results;
-    }
-
-    // Group students by supervisor
-    const supervisorMap: Record<string, { students: ApiUser[]; points: number }> = {};
-    for (const u of allUsers) {
-      if (u.groups.includes("Student") && u.supervisor) {
-        if (!supervisorMap[u.supervisor]) {
-          supervisorMap[u.supervisor] = { students: [], points: 0 };
-        }
-        supervisorMap[u.supervisor].students.push(u);
-        const pts = allPoints.find((p) => p.user === u.id);
-        if (pts) {
-          supervisorMap[u.supervisor].points += pts.points ?? 0;
-        }
-      }
-    }
-
-    // Build result
-    const result = Object.entries(supervisorMap).map(([username, data]) => {
-      const supUser = allUsers.find((u) => u.username === username);
-      const fullName = supUser ? `${supUser.first_name} ${supUser.last_name}`.trim() || username : username;
-      const studentCount = data.students.length;
-      const totalPoints = data.points;
-      const avgPoints = studentCount > 0 ? Math.round(totalPoints / studentCount) : 0;
-      return { id: supUser?.id ?? 0, username, fullName, studentCount, totalPoints, avgPoints };
-    }).sort((a, b) => b.avgPoints - a.avgPoints);
-
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error fetching top supervisors:", error);
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
 
@@ -492,124 +396,6 @@ export async function addStudentActivity(
     return { success: true, data: { id: data.id } };
   } catch (error) {
     console.error("Error adding student activity:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
-  }
-}
-
-// ===============================
-// Update Student Activity (Moderator/Admin)
-// ===============================
-
-export async function updateStudentActivity(
-  studentId: number,
-  activityId: number,
-  multiplier: number,
-): Promise<FetchResult<null>> {
-  try {
-    const token = await getToken();
-    if (!token) throw new Error("No access token");
-
-    const res = await fetch(`${API_BASE}api/v1/users/${studentId}/activities/${activityId}/`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Accept-Language": "ar",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ multiplier }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      let errorMsg = `فشل تحديث النشاط (${res.status})`;
-      try {
-        const data = JSON.parse(text);
-        errorMsg = data?.detail || data?.error || errorMsg;
-      } catch {
-        // not JSON
-      }
-      return { success: false, error: errorMsg };
-    }
-
-    return { success: true, data: null };
-  } catch (error) {
-    console.error("Error updating student activity:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
-  }
-}
-
-// ===============================
-// Delete Student Activity (Moderator/Admin)
-// ===============================
-
-export async function deleteStudentActivity(
-  studentId: number,
-  activityId: number,
-): Promise<FetchResult<null>> {
-  try {
-    const token = await getToken();
-    if (!token) throw new Error("No access token");
-
-    const res = await fetch(`${API_BASE}api/v1/users/${studentId}/activities/${activityId}/`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Accept-Language": "ar",
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      let errorMsg = `فشل حذف النشاط (${res.status})`;
-      try {
-        const data = JSON.parse(text);
-        errorMsg = data?.detail || data?.error || errorMsg;
-      } catch {
-        // not JSON
-      }
-      return { success: false, error: errorMsg };
-    }
-
-    return { success: true, data: null };
-  } catch (error) {
-    console.error("Error deleting student activity:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
-  }
-}
-
-// ===============================
-// Get Student Activities (for edit/delete in moderator view)
-// ===============================
-
-export async function getStudentActivities(
-  studentId: number,
-): Promise<FetchResult<ApiActivity[]>> {
-  try {
-    const token = await getToken();
-    if (!token) throw new Error("No access token");
-
-    const data = await fetchJson<{ results: ApiActivity[] } | ApiActivity[]>(
-      `${API_BASE}api/v1/users/${studentId}/activities/`,
-      token,
-    );
-
-    if (Array.isArray(data)) {
-      return { success: true, data };
-    }
-
-    return { success: true, data: data.results || [] };
-  } catch (error) {
-    console.error("Error fetching student activities:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",

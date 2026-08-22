@@ -1,26 +1,32 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { checkTokenValidity } from "@/actions/auth-actions";
-import { getUserProfile, getUserByUsername, getProfileCategories, getAllUsersWithRoles, getSupervisedStudents } from "@/actions/profile";
+import {
+  getUserProfile,
+  getUserByUsername,
+  getProfileCategories,
+  getSupervisedStudents,
+  getStudentRank,
+} from "@/actions/profile";
 
 import { Lalezar, Tajawal } from "next/font/google";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Shield, BookOpen } from "lucide-react";
 import Link from "next/link";
 
 import ProfileHeader from "@/components/Profile/ProfileHeader";
 import ProfileMetaInfo from "@/components/Profile/ProfileMetaInfo";
 import ProfileActivityList from "@/components/Profile/ProfileActivityList";
 import RoleBadge from "@/components/Profile/RoleBadge";
-import AdminProfileView from "@/components/Profile/views/AdminProfileView";
+import EditOwnProfile from "@/components/Profile/EditOwnProfile";
 import ModeratorProfileView from "@/components/Profile/views/ModeratorProfileView";
 import StudentProfileView from "@/components/Profile/views/StudentProfileView";
 
 import { toArabicDigits } from "@/lib/utils";
 import {
   getPrimaryRole,
+  getRoles,
   getVisibility,
   type UserActivity,
-  type AdminUserSummary,
   type SupervisedStudent,
 } from "@/lib/profile-types";
 
@@ -80,7 +86,6 @@ export default async function ProfilePage({
   }
 
   const { user: targetUser, points, activities } = profileResult.data;
-  const targetRole = getPrimaryRole(targetUser.groups || []);
   const visibility = getVisibility(viewerRole, isOwnProfile);
 
   // Relationship-based activity visibility:
@@ -93,20 +98,18 @@ export default async function ProfilePage({
     }
   }
 
-  // Enrich activities with category names
+  // Enrich activities with category names (values come from the API, not hard-coded)
   let enrichedActivities: UserActivity[] = activities;
   const categoriesResult = await getProfileCategories();
-  if (categoriesResult.success && categoriesResult.data) {
-    const catMap = new Map(categoriesResult.data.map((c) => [c.id, c]));
+  const categories = categoriesResult.success ? (categoriesResult.data ?? []) : [];
+  if (categories.length > 0) {
+    const catMap = new Map(categories.map((c) => [c.id, c]));
     enrichedActivities = activities.map((a) => ({
       ...a,
       category_name: catMap.get(a.category)?.name,
       points: (catMap.get(a.category)?.value ?? 0) * a.multiplier,
     }));
   }
-
-  // multiplierTotal removed — replaced with attendance percentage
-  const fullName = `${targetUser.first_name} ${targetUser.last_name}`.trim();
 
   // Fetch supervisor info (id + full name) for clickable link
   let supervisorInfo: { id: number; fullName: string; username: string } | null = null;
@@ -135,101 +138,76 @@ export default async function ProfilePage({
   }
 
   // ============================
-  // Own profile — show role-specific dashboard
+  // Own profile — role-specific sections stacked by the user's groups
+  // (a user can be Student + Admin, Supervisor + Admin, Student + Supervisor, ...)
   // ============================
   if (isOwnProfile) {
-    let roleView: React.ReactNode = null;
+    const groups = targetUser.groups || [];
+    const isAdmin = groups.includes("Admin");
+    const isSupervisor = groups.includes("Supervisor");
+    const isStudent = groups.includes("Student") || (!isAdmin && !isSupervisor);
 
-    if (viewerRole === "Admin") {
-      // Fetch all users + points in parallel
-      const { getGlobalStats, getTopSupervisors } = await import("@/actions/profile");
-      const [allUsersResult, statsResult, topSupervisorsResult] = await Promise.all([
-        getAllUsersWithRoles(),
-        getGlobalStats(),
-        getTopSupervisors(),
-      ]);
+    const sections: React.ReactNode[] = [];
+    const multiSection = [isStudent, isSupervisor].filter(Boolean).length > 1;
 
-      // Fetch points for all users
-      const pointsMap: Record<number, number> = {};
-      try {
-        const pointsRes = await fetch(`${process.env.BASE_URL}api/v1/users/points/`, {
-          headers: {
-            Authorization: `Bearer ${(await cookies()).get("access")?.value}`,
-            "Accept-Language": "ar",
-          },
-          cache: "no-store",
-        });
-        if (pointsRes.ok) {
-          const pointsData = await pointsRes.json();
-          const results = pointsData.results || pointsData;
-          if (Array.isArray(results)) {
-            for (const p of results) {
-              pointsMap[p.user] = p.points ?? 0;
-            }
-          }
-        }
-      } catch {
-        // points fetch failed — users will show 0
-      }
-
-      const allUsers: AdminUserSummary[] = [];
-      if (allUsersResult.success && allUsersResult.data) {
-        for (const u of allUsersResult.data) {
-          allUsers.push({
-            id: u.id,
-            username: u.username,
-            first_name: u.first_name,
-            last_name: u.last_name,
-            email: u.email,
-            groups: u.groups,
-            supervisor: u.supervisor,
-            referrer: u.referrer,
-            date_joined: u.date_joined,
-            points: pointsMap[u.id] ?? 0,
-          });
-        }
-      }
-
-      // Build supervisor map
-      const supervisorMap: Record<string, { id: number; fullName: string }> = {};
-      if (allUsersResult.success && allUsersResult.data) {
-        for (const u of allUsersResult.data) {
-          const fullName = `${u.first_name} ${u.last_name}`.trim() || u.username;
-          supervisorMap[u.username] = { id: u.id, fullName };
-        }
-      }
-
-      roleView = (
-        <AdminProfileView
-          users={allUsers}
-          supervisorMap={supervisorMap}
-          globalStats={statsResult.success ? statsResult.data : null}
-          topSupervisors={topSupervisorsResult.success ? topSupervisorsResult.data : []}
-        />
+    if (isStudent) {
+      const rankResult = await getStudentRank(targetUser.id);
+      sections.push(
+        <section key="student" className="flex flex-col gap-4">
+          {multiSection && (
+            <SectionTitle icon={<BookOpen className="w-4 h-4" strokeWidth={2.4} />}>
+              لوحة الطالب
+            </SectionTitle>
+          )}
+          <StudentProfileView
+            points={points}
+            activities={enrichedActivities}
+            rank={rankResult.success ? rankResult.data : null}
+            supervisorName={supervisorInfo?.fullName || targetUser.supervisor || undefined}
+            supervisorId={supervisorInfo?.id}
+            referrerName={referrerInfo?.fullName || targetUser.referrer || undefined}
+            referrerId={referrerInfo?.id}
+            dateJoined={targetUser.date_joined}
+          />
+        </section>,
       );
-    } else if (viewerRole === "Supervisor") {
+    }
+
+    if (isSupervisor) {
       const studentsResult = await getSupervisedStudents(targetUser.username);
       const students: SupervisedStudent[] = studentsResult.success
         ? (studentsResult.data ?? [])
         : [];
 
-      roleView = (
-        <ModeratorProfileView
-          students={students}
-          moderatorName={fullName || targetUser.username}
-        />
+      sections.push(
+        <section key="supervisor" className="flex flex-col gap-4">
+          {multiSection && (
+            <SectionTitle icon={<Shield className="w-4 h-4" strokeWidth={2.4} />}>
+              لوحة المشرف
+            </SectionTitle>
+          )}
+          <ModeratorProfileView students={students} categories={categories} />
+        </section>,
       );
-    } else {
-      roleView = (
-        <StudentProfileView
-          points={points}
-          activities={enrichedActivities}
-          supervisorName={supervisorInfo?.fullName || targetUser.supervisor || undefined}
-          supervisorId={supervisorInfo?.id}
-          referrerName={referrerInfo?.fullName || targetUser.referrer || undefined}
-          referrerId={referrerInfo?.id}
-          dateJoined={targetUser.date_joined}
-        />
+    }
+
+    // Admin with no student/supervisor sections: personal data only —
+    // all management lives in the control board
+    if (sections.length === 0) {
+      sections.push(
+        <section
+          key="admin"
+          className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm p-5 md:p-6"
+        >
+          <h3 className={`${lalezar.className} text-lg text-[#043F2E] mb-4`}>معلومات</h3>
+          <ProfileMetaInfo
+            supervisor={supervisorInfo}
+            referrer={referrerInfo}
+            email={targetUser.email}
+            dateJoined={targetUser.date_joined}
+            visibility={visibility}
+          />
+        </section>,
       );
     }
 
@@ -242,14 +220,21 @@ export default async function ProfilePage({
               firstName={targetUser.first_name}
               lastName={targetUser.last_name}
               username={targetUser.username}
-              role={targetRole}
-              isOwnProfile={true}
+              groups={groups}
               supervisor={supervisorInfo}
+              action={
+                <EditOwnProfile
+                  userId={targetUser.id}
+                  firstName={targetUser.first_name}
+                  lastName={targetUser.last_name}
+                  email={targetUser.email}
+                />
+              }
             />
           </div>
 
-          {/* Role-specific view */}
-          {roleView}
+          {/* Role-specific sections */}
+          {sections}
         </div>
       </div>
     );
@@ -273,8 +258,7 @@ export default async function ProfilePage({
             firstName={targetUser.first_name}
             lastName={targetUser.last_name}
             username={targetUser.username}
-            role={targetRole}
-            isOwnProfile={false}
+            groups={targetUser.groups || []}
             supervisor={visibility.showSupervisor ? supervisorInfo : null}
           />
         </div>
@@ -296,8 +280,10 @@ export default async function ProfilePage({
             </div>
             <div className="bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 flex flex-col gap-1">
               <span className={`${tajawal.className} text-[11px] font-medium text-[#043F2E]/50`}>الدور</span>
-              <div className="flex items-center pt-1">
-                <RoleBadge role={targetRole} size="md" />
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                {getRoles(targetUser.groups || []).map((r) => (
+                  <RoleBadge key={r} role={r} size="sm" />
+                ))}
               </div>
             </div>
           </div>
@@ -322,20 +308,24 @@ export default async function ProfilePage({
             <ProfileActivityList activities={visibleActivities} />
           </div>
         )}
-
-        {/* Back link */}
-        <div className="flex justify-center">
-          <Link
-            href="/"
-            className={`${tajawal.className} inline-flex items-center gap-2 h-11 px-5 bg-white border border-[#043F2E]/15 text-[#043F2E] rounded-xl text-sm font-bold hover:bg-[#F7FBEA] transition-colors`}
-          >
-            <ArrowRight className="w-4 h-4" strokeWidth={2.4} />
-            العودة للرئيسية
-          </Link>
-        </div>
       </div>
     </div>
   );
 }
 
-
+function SectionTitle({
+  icon,
+  children,
+}: {
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-8 h-8 rounded-lg bg-[#043F2E] text-[#BEE663] flex items-center justify-center">
+        {icon}
+      </div>
+      <h2 className={`${lalezar.className} text-xl text-[#043F2E] leading-tight`}>{children}</h2>
+    </div>
+  );
+}
