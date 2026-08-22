@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { unstable_cache } from "next/cache";
 import { gregorianToHijri, hijriToGregorian } from "@tabby_ai/hijri-converter";
 import { getHijriMonthDays } from "@/lib/utils";
+import { SUPERVISOR_MANAGED_CATEGORY_IDS } from "@/lib/profile-types";
 
 const API_BASE = process.env.BASE_URL;
 
@@ -335,6 +336,102 @@ export async function updateUser(
 }
 
 // ===============================
+// Get Student Activities (Moderator/Admin)
+// ===============================
+
+export async function getStudentActivities(
+  studentId: number,
+): Promise<FetchResult<ApiActivity[]>> {
+  try {
+    const token = await getToken();
+    if (!token) throw new Error("No access token");
+
+    // The endpoint is paginated (PAGE_SIZE 50) — walk `next` so an older
+    // activity never becomes invisible, and so undeletable, in the log
+    const activities: ApiActivity[] = [];
+    let url: string | null = `${API_BASE}api/v1/users/${studentId}/activities/`;
+    let guard = 0;
+
+    while (url && guard < 20) {
+      const page: { results: ApiActivity[]; next: string | null } | ApiActivity[] =
+        await fetchJson(url, token);
+
+      if (Array.isArray(page)) {
+        activities.push(...page);
+        url = null;
+      } else {
+        activities.push(...(page.results || []));
+        url = page.next;
+      }
+      guard++;
+    }
+
+    return { success: true, data: activities };
+  } catch (error) {
+    console.error("Error fetching student activities:", error);
+    return { success: false, error: "تعذّر تحميل الأنشطة" };
+  }
+}
+
+// ===============================
+// Delete Student Activity (Moderator/Admin)
+// ===============================
+
+export async function deleteStudentActivity(
+  studentId: number,
+  activityId: number,
+): Promise<FetchResult<null>> {
+  try {
+    const token = await getToken();
+    if (!token) throw new Error("No access token");
+
+    // A supervisor manages recitation and reading only. The API itself lets them
+    // touch any category of their own students, so the scope is enforced here —
+    // the browser filter alone would not survive a hand-made call to this action.
+    const activity = await fetchJson<ApiActivity>(
+      `${API_BASE}api/v1/users/${studentId}/activities/${activityId}/`,
+      token,
+    );
+    if (!SUPERVISOR_MANAGED_CATEGORY_IDS.includes(activity.category)) {
+      return { success: false, error: "هذا النشاط يُدار من لوحة التحكم" };
+    }
+
+    const res = await fetch(
+      `${API_BASE}api/v1/users/${studentId}/activities/${activityId}/`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Accept-Language": "ar",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      },
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      let errorMsg = `فشل حذف النشاط (${res.status})`;
+      try {
+        const data = JSON.parse(text);
+        errorMsg = data?.detail || data?.error || errorMsg;
+      } catch {
+        // not JSON
+      }
+      return { success: false, error: errorMsg };
+    }
+
+    return { success: true, data: null };
+  } catch (error) {
+    console.error("Error deleting student activity:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+// ===============================
 // Get Categories (cached 1h)
 // ===============================
 
@@ -367,6 +464,11 @@ export async function addStudentActivity(
   try {
     const token = await getToken();
     if (!token) throw new Error("No access token");
+
+    // Same scope as the delete path — recitation and reading only
+    if (!SUPERVISOR_MANAGED_CATEGORY_IDS.includes(categoryId)) {
+      return { success: false, error: "هذا النشاط يُدار من لوحة التحكم" };
+    }
 
     const date = new Date().toISOString();
 

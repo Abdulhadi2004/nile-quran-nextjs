@@ -13,7 +13,7 @@ import {
   Calendar,
 } from "lucide-react";
 import ProfileActivityList from "../ProfileActivityList";
-import { toArabicDigits, getHijriMonth } from "@/lib/utils";
+import { toArabicDigits, getHijriMonth, formatArabicDate } from "@/lib/utils";
 import { gregorianToHijri } from "@tabby_ai/hijri-converter";
 import type { UserActivity } from "@/lib/profile-types";
 import Link from "next/link";
@@ -34,19 +34,6 @@ interface Props {
 
 // Brand palette for pie slices (approved tokens only)
 const PIE_COLORS = ["#043F2E", "#9ADD00", "#BEE663", "#065f46", "#DEFF90", "#2A5A45"];
-
-function formatDateArabic(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    const months = [
-      "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-      "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
-    ];
-    return `${toArabicDigits(d.getDate())} ${months[d.getMonth()]} ${toArabicDigits(d.getFullYear())}`;
-  } catch {
-    return dateStr;
-  }
-}
 
 export default function StudentProfileView({
   points,
@@ -145,7 +132,7 @@ export default function StudentProfileView({
             <InfoCard
               icon={<Calendar className="w-4 h-4" strokeWidth={2.2} />}
               label="تاريخ الانضمام"
-              value={formatDateArabic(dateJoined)}
+              value={formatArabicDate(dateJoined)}
             />
           )}
         </div>

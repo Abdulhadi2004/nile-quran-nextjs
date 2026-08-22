@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Lalezar, Tajawal } from "next/font/google";
 import {
@@ -17,10 +17,19 @@ import {
   Plus,
   Loader2,
   Check,
+  Trash2,
+  ClipboardList,
+  Calendar,
+  AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { toArabicDigits } from "@/lib/utils";
-import { addStudentActivity } from "@/actions/profile";
+import { toArabicDigits, formatArabicDate } from "@/lib/utils";
+import {
+  addStudentActivity,
+  getStudentActivities,
+  deleteStudentActivity,
+} from "@/actions/profile";
+import { SUPERVISOR_MANAGED_CATEGORY_IDS } from "@/lib/profile-types";
 import type { SupervisedStudent } from "@/lib/profile-types";
 
 const lalezar = Lalezar({ subsets: ["arabic"], weight: "400" });
@@ -37,15 +46,23 @@ interface Props {
   categories: ActivityCategory[];
 }
 
-// Categories a recitation supervisor may record for their students
-const CAT_QURAN_READING = 3;
 const CAT_TASMEE = 4;
-const SUPERVISOR_CATEGORY_IDS = [CAT_TASMEE, CAT_QURAN_READING];
+
+type ActivityItem = {
+  id: number;
+  category: number;
+  date: string;
+  multiplier: number;
+};
 
 export default function ModeratorProfileView({ students, categories }: Props) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"points" | "name">("points");
   const [addActivityStudent, setAddActivityStudent] = useState<SupervisedStudent | null>(null);
+  const [manageStudent, setManageStudent] = useState<SupervisedStudent | null>(null);
+
+  // Stable so the modal's Escape listener is not rebound on every parent render
+  const closeManage = useCallback(() => setManageStudent(null), []);
 
   const filtered = useMemo(() => {
     let result = [...students];
@@ -152,10 +169,10 @@ export default function ModeratorProfileView({ students, categories }: Props) {
             {/* Desktop header */}
             <div className="hidden md:flex bg-[#F7FBEA] border-b border-[#043F2E]/10 px-5 py-3 gap-3">
               <div className="w-[44px] shrink-0" />
-              <div className="w-[220px] shrink-0"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الطالب</span></div>
-              <div className="w-[120px] shrink-0 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الأنشطة</span></div>
+              <div className="w-[170px] shrink-0"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الطالب</span></div>
+              <div className="w-[90px] shrink-0 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الأنشطة</span></div>
               <div className="flex-1 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>النقاط</span></div>
-              <div className="w-[170px] shrink-0 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>إجراءات</span></div>
+              <div className="w-[250px] shrink-0 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>إجراءات</span></div>
             </div>
 
             <div className="hidden md:flex flex-col">
@@ -177,13 +194,13 @@ export default function ModeratorProfileView({ students, categories }: Props) {
                     </div>
 
                     {/* Name */}
-                    <div className="w-[220px] shrink-0 min-w-0">
+                    <div className="w-[170px] shrink-0 min-w-0">
                       <p className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate`}>{fullName || student.username}</p>
                       <p className={`${tajawal.className} text-[10px] text-[#043F2E]/40`}>@{student.username}</p>
                     </div>
 
                     {/* Activities count */}
-                    <div className="w-[120px] shrink-0 text-center">
+                    <div className="w-[90px] shrink-0 text-center">
                       <span className={`${tajawal.className} text-xs font-medium text-[#043F2E]/60`}>
                         {toArabicDigits(student.activities_count)} نشاط
                       </span>
@@ -197,13 +214,20 @@ export default function ModeratorProfileView({ students, categories }: Props) {
                     </div>
 
                     {/* Actions */}
-                    <div className="w-[170px] shrink-0 flex items-center justify-center gap-2">
+                    <div className="w-[250px] shrink-0 flex items-center justify-center gap-2">
                       <button
                         onClick={() => setAddActivityStudent(student)}
                         className={`${tajawal.className} inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-[#065f46] text-[#BEE663] text-xs font-bold hover:bg-[#043F2E] transition-colors`}
                       >
                         <Plus className="w-3.5 h-3.5" strokeWidth={2.4} />
                         نشاط
+                      </button>
+                      <button
+                        onClick={() => setManageStudent(student)}
+                        className={`${tajawal.className} inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-[#F7FBEA] border border-[#043F2E]/15 text-[#043F2E] text-xs font-bold whitespace-nowrap hover:bg-[#BEE663]/30 transition-colors`}
+                      >
+                        <ClipboardList className="w-3.5 h-3.5 shrink-0" strokeWidth={2.4} />
+                        سجل الأنشطة
                       </button>
                       <Link
                         href={`/profile/${student.id}`}
@@ -249,6 +273,13 @@ export default function ModeratorProfileView({ students, categories }: Props) {
                         <Plus className="w-3.5 h-3.5" strokeWidth={2.4} />
                         نشاط
                       </button>
+                      <button
+                        onClick={() => setManageStudent(student)}
+                        className={`${tajawal.className} flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-white border border-[#043F2E]/15 text-[#043F2E] text-xs font-bold hover:bg-[#BEE663]/30 transition-colors`}
+                      >
+                        <ClipboardList className="w-3.5 h-3.5" strokeWidth={2.4} />
+                        السجل
+                      </button>
                       <Link
                         href={`/profile/${student.id}`}
                         aria-label={`عرض ملف ${fullName || student.username}`}
@@ -273,6 +304,240 @@ export default function ModeratorProfileView({ students, categories }: Props) {
           onClose={() => setAddActivityStudent(null)}
         />
       )}
+
+      {/* Activity Log Modal */}
+      {manageStudent && (
+        <ActivityLogModal
+          key={manageStudent.id}
+          student={manageStudent}
+          categories={categories}
+          onClose={closeManage}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================
+// Activity Log Modal — review and remove recitation/reading activities
+// ============================
+function ActivityLogModal({
+  student,
+  categories,
+  onClose,
+}: {
+  student: SupervisedStudent;
+  categories: ActivityCategory[];
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [activities, setActivities] = useState<ActivityItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const busyRef = useRef(false);
+
+  const fullName = `${student.first_name} ${student.last_name}`.trim() || student.username;
+  const initials = `${student.first_name?.charAt(0) || ""}${student.last_name?.charAt(0) || ""}`.trim();
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const isDeleting = deletingId !== null;
+
+  // Read by the Escape handler, which is bound once and cannot see fresh state
+  busyRef.current = isDeleting;
+
+  // Don't let a delete get abandoned halfway
+  const requestClose = () => {
+    if (!busyRef.current) onClose();
+  };
+
+  useEffect(() => {
+    let active = true;
+    getStudentActivities(student.id).then((res) => {
+      if (!active) return;
+      if (res.success && res.data) {
+        // A supervisor only manages recitation and reading; the rest is the control board's
+        setActivities(
+          res.data
+            .filter((a) => SUPERVISOR_MANAGED_CATEGORY_IDS.includes(a.category))
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+        );
+      } else {
+        setError(res.error || "تعذّر تحميل الأنشطة");
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [student.id]);
+
+  // The dialog takes focus on open, and the button that opened it gets focus back on close
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    return () => opener?.focus?.();
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busyRef.current) onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const handleDelete = async (activityId: number) => {
+    setError(null);
+    setDeletingId(activityId);
+    try {
+      const res = await deleteStudentActivity(student.id, activityId);
+      if (res.success) {
+        setActivities((prev) => (prev ?? []).filter((a) => a.id !== activityId));
+        setConfirmingId(null);
+        router.refresh();
+      } else {
+        setError(res.error || "فشل حذف النشاط");
+      }
+    } catch {
+      setError("تعذّر الاتصال، حاول مرة أخرى");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#043F2E]/40 p-4" onClick={requestClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`سجل أنشطة ${fullName}`}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[440px] max-h-[85vh] overflow-y-auto bg-white rounded-3xl border border-[#043F2E]/10 shadow-lg p-5 flex flex-col gap-4"
+        dir="rtl"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-[#043F2E] flex items-center justify-center">
+              <ClipboardList className="w-4 h-4 text-[#BEE663]" strokeWidth={2.4} />
+            </div>
+            <h3 className={`${lalezar.className} text-lg text-[#043F2E]`}>سجل الأنشطة</h3>
+          </div>
+          <button
+            ref={closeRef}
+            onClick={requestClose}
+            disabled={isDeleting}
+            aria-label="إغلاق"
+            className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center text-[#043F2E]/60 hover:bg-[#F7FBEA] hover:text-[#043F2E] transition-colors disabled:opacity-50"
+          >
+            <X className="w-4 h-4" strokeWidth={2.2} />
+          </button>
+        </div>
+
+        {/* Student info */}
+        <div className="flex items-center gap-3 bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3">
+          <div className="w-10 h-10 shrink-0 rounded-full bg-gradient-to-br from-[#043F2E] to-[#065f46] flex items-center justify-center text-white shadow-sm">
+            <span className={`${tajawal.className} text-xs font-bold`}>{initials || <User className="w-4 h-4" strokeWidth={2.2} />}</span>
+          </div>
+          <div className="flex flex-col min-w-0">
+            <span className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate`}>{fullName}</span>
+            <span className={`${tajawal.className} text-[10px] text-[#043F2E]/60`}>@{student.username}</span>
+          </div>
+        </div>
+
+        {/* Scope note — the log deliberately shows only what a supervisor may change */}
+        <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 leading-relaxed`}>
+          تظهر هنا أنشطة التسميع والقراءة فقط، وهي ما يمكنك إضافته أو حذفه. باقي الأنشطة تُدار من لوحة التحكم.
+        </p>
+
+        {/* Error */}
+        {error && (
+          <div role="alert" className="flex items-center gap-2 rounded-xl bg-[#F4E0D6] border border-[#9B3D2E]/30 px-3 py-2.5">
+            <AlertCircle className="w-4 h-4 text-[#9B3D2E] shrink-0" strokeWidth={2.2} />
+            <span className={`${tajawal.className} text-xs text-[#9B3D2E]`}>{error}</span>
+          </div>
+        )}
+
+        {activities === null && !error ? (
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-14 rounded-2xl bg-[#F7FBEA] animate-pulse" />
+            ))}
+          </div>
+        ) : activities === null ? null : activities.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-[#F7FBEA] flex items-center justify-center mb-3">
+              <Inbox className="w-6 h-6 text-[#043F2E]/40" strokeWidth={1.8} />
+            </div>
+            <p className={`${tajawal.className} text-sm text-[#043F2E]/60`}>لا توجد أنشطة تسميع أو قراءة</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {activities.map((act) => {
+              const cat = categoryById.get(act.category);
+              const activityName = cat?.name ?? "نشاط";
+              const activityDate = formatArabicDate(act.date);
+              const isConfirming = confirmingId === act.id;
+              const isRowDeleting = deletingId === act.id;
+
+              return (
+                <div
+                  key={act.id}
+                  className="bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 flex items-center gap-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate`}>
+                      {activityName}
+                    </p>
+                    <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 flex items-center gap-1`}>
+                      <Calendar className="w-3 h-3" strokeWidth={2.2} />
+                      {activityDate}
+                    </p>
+                  </div>
+
+                  {/* Points come from the category; with no category loaded there is no honest number to show */}
+                  {cat && (
+                    <span className={`${tajawal.className} text-xs font-bold text-[#043F2E] bg-[#BEE663] rounded-full px-2 py-0.5 shrink-0`}>
+                      +{toArabicDigits(cat.value * act.multiplier)}
+                    </span>
+                  )}
+
+                  {isConfirming ? (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        autoFocus
+                        onClick={() => handleDelete(act.id)}
+                        disabled={isDeleting}
+                        className={`${tajawal.className} h-8 px-2.5 rounded-lg bg-[#9B3D2E] text-white text-[11px] font-bold hover:bg-[#9B3D2E]/90 transition-colors disabled:opacity-50 flex items-center gap-1`}
+                      >
+                        {isRowDeleting ? <Loader2 className="w-3 h-3 animate-spin" strokeWidth={2.5} /> : <Check className="w-3 h-3" strokeWidth={2.5} />}
+                        تأكيد الحذف
+                      </button>
+                      <button
+                        onClick={() => setConfirmingId(null)}
+                        disabled={isDeleting}
+                        className="w-8 h-8 rounded-lg bg-white border border-[#043F2E]/15 flex items-center justify-center text-[#043F2E]/60 hover:text-[#043F2E] transition-colors disabled:opacity-50"
+                        aria-label="إلغاء الحذف"
+                      >
+                        <X className="w-3.5 h-3.5" strokeWidth={2.5} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmingId(act.id)}
+                      disabled={isDeleting}
+                      className="w-8 h-8 shrink-0 rounded-lg bg-white border border-[#043F2E]/15 flex items-center justify-center text-[#043F2E]/60 hover:border-[#9B3D2E]/40 hover:text-[#9B3D2E] transition-colors disabled:opacity-50"
+                      aria-label={`حذف ${activityName} بتاريخ ${activityDate}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" strokeWidth={2.2} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -291,7 +556,7 @@ function AddActivityModal({
 }) {
   const router = useRouter();
   // Categories a supervisor may record, with labels + values from the API
-  const availableCategories = SUPERVISOR_CATEGORY_IDS.map((id) =>
+  const availableCategories = SUPERVISOR_MANAGED_CATEGORY_IDS.map((id) =>
     categories.find((c) => c.id === id),
   ).filter((c): c is ActivityCategory => Boolean(c));
 

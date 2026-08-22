@@ -43,6 +43,17 @@ export interface SupervisedStudent {
 }
 
 // ===============================
+// Supervisor Activity Scope
+// ===============================
+// Recitation (تسميع, id 4) and Quran reading (قراءة, id 3) — the only activities a
+// recitation supervisor records or removes. Every other category belongs to the
+// control board. The API lets a supervisor touch any category of their own
+// students, so this list is what both the profile UI and its server actions
+// enforce; keep them reading the same constant.
+
+export const SUPERVISOR_MANAGED_CATEGORY_IDS = [4, 3];
+
+// ===============================
 // Role Helpers
 // ===============================
 

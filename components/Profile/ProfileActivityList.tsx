@@ -2,7 +2,7 @@
 
 import { Lalezar, Tajawal } from "next/font/google";
 import { Calendar, Inbox } from "lucide-react";
-import { toArabicDigits } from "@/lib/utils";
+import { toArabicDigits, formatArabicDate } from "@/lib/utils";
 
 const lalezar = Lalezar({ subsets: ["arabic"], weight: "400" });
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
@@ -19,19 +19,6 @@ interface ActivityItem {
 interface Props {
   activities: ActivityItem[];
   emptyMessage?: string;
-}
-
-function formatDateArabic(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    const months = [
-      "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-      "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
-    ];
-    return `${toArabicDigits(d.getDate())} ${months[d.getMonth()]} ${toArabicDigits(d.getFullYear())}`;
-  } catch {
-    return dateStr;
-  }
 }
 
 export default function ProfileActivityList({ activities, emptyMessage }: Props) {
@@ -67,7 +54,7 @@ export default function ProfileActivityList({ activities, emptyMessage }: Props)
               <div className="flex items-center gap-1.5">
                 <Calendar className="w-3 h-3 text-[#043F2E]/40" strokeWidth={2.2} />
                 <span className={`${tajawal.className} text-xs text-[#043F2E]/50`}>
-                  {formatDateArabic(activity.date)}
+                  {formatArabicDate(activity.date)}
                 </span>
               </div>
             </div>
