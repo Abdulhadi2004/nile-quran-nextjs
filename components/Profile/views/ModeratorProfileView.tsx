@@ -703,7 +703,7 @@ function ActivitySheet({
 // has not recited this week needs a nudge. Both are the supervisor's to act on,
 // and both stay inside recitation and reading — the rest is not their remit.
 function FollowUpBadge({ student }: { student: SupervisedStudent }) {
-  if (isLongInactive(student.last_activity_at)) {
+  if (isLongInactive(student.last_activity_at, student.date_joined)) {
     const weeks = weeksSinceActivity(student.last_activity_at);
     return (
       <span

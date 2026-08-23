@@ -339,6 +339,7 @@ export async function getSupervisedStudents(
       points: number;
       activities_count: number;
       weekly_activities_count: number;
+      date_joined: string;
       recited_this_week: boolean;
       last_activity_at: string | null;
     }>
@@ -392,6 +393,7 @@ export async function getSupervisedStudents(
         points: pointsInfo?.points ?? 0,
         activities_count: pointsInfo?.activities?.length ?? 0,
         weekly_activities_count: weekInfo?.activities?.length ?? 0,
+        date_joined: student.date_joined,
         recited_this_week: (recitationInfo?.activities?.length ?? 0) > 0,
         last_activity_at: latestActivityDate(pointsInfo?.activities),
       };

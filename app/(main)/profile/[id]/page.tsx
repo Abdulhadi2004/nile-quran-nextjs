@@ -298,7 +298,7 @@ export default async function ProfilePage({
         {/* A member who has recorded nothing for weeks has usually stopped coming.
             Only an administrator sees this: reaching out is theirs to do, and a
             supervisor's part is limited to recitation and reading. */}
-        {viewerIsAdmin && isLongInactive(lastActivityAt) && (
+        {viewerIsAdmin && isLongInactive(lastActivityAt, targetUser.date_joined) && (
           <div className="bg-[#F4E0D6] border border-[#9B3D2E]/30 rounded-3xl p-5 md:p-6 flex items-start gap-3">
             <div className="w-9 h-9 shrink-0 rounded-xl bg-[#9B3D2E]/10 text-[#9B3D2E] flex items-center justify-center">
               <BellRing className="w-4 h-4" strokeWidth={2.4} />

@@ -41,6 +41,7 @@ export interface SupervisedStudent {
   activities_count: number;
   weekly_activities_count: number;
   recited_this_week: boolean;
+  date_joined: string;
   /** ISO date of the member's most recent activity of any kind, null if they never had one */
   last_activity_at: string | null;
 }
@@ -67,9 +68,18 @@ export function weeksSinceActivity(lastActivityAt: string | null): number | null
   return Math.floor(days / 7);
 }
 
-// Never active at all counts as needing follow-up just as much as long-lapsed
-export function isLongInactive(lastActivityAt: string | null): boolean {
-  if (!lastActivityAt) return true;
+// A member who never recorded anything is measured from the day they joined, not
+// from the beginning of time — someone who signed up last week has not lapsed.
+export function isLongInactive(
+  lastActivityAt: string | null,
+  dateJoined?: string | null,
+): boolean {
+  if (!lastActivityAt) {
+    const weeksAsMember = weeksSinceActivity(dateJoined ?? null);
+    // No join date to go on: say nothing rather than accuse a new member
+    if (weeksAsMember === null) return false;
+    return weeksAsMember >= INACTIVITY_ALERT_WEEKS;
+  }
   const weeks = weeksSinceActivity(lastActivityAt);
   return weeks !== null && weeks >= INACTIVITY_ALERT_WEEKS;
 }
