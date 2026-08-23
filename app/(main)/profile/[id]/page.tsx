@@ -14,13 +14,12 @@ import {
 import { gregorianToHijri } from "@tabby_ai/hijri-converter";
 
 import { Lalezar, Tajawal } from "next/font/google";
-import { ArrowRight, Shield, BookOpen } from "lucide-react";
+import { ArrowRight, Shield, BookOpen, BellRing } from "lucide-react";
 import Link from "next/link";
 
 import ProfileHeader from "@/components/Profile/ProfileHeader";
 import ProfileMetaInfo from "@/components/Profile/ProfileMetaInfo";
 import ProfileActivityList from "@/components/Profile/ProfileActivityList";
-import RoleBadge from "@/components/Profile/RoleBadge";
 import EditOwnProfile from "@/components/Profile/EditOwnProfile";
 import ModeratorProfileView from "@/components/Profile/views/ModeratorProfileView";
 import StudentProfileView from "@/components/Profile/views/StudentProfileView";
@@ -28,8 +27,9 @@ import StudentProfileView from "@/components/Profile/views/StudentProfileView";
 import { toArabicDigits } from "@/lib/utils";
 import {
   getPrimaryRole,
-  getRoles,
   getVisibility,
+  isLongInactive,
+  weeksSinceActivity,
   type UserActivity,
   type SupervisedStudent,
 } from "@/lib/profile-types";
@@ -274,6 +274,13 @@ export default async function ProfilePage({
         .slice(0, 10)
     : [];
 
+  const viewerIsAdmin = (currentUser.groups || []).includes("Admin");
+  const lastActivityAt = activities.reduce<string | null>((latest, a) => {
+    if (!latest) return a.date;
+    return new Date(a.date).getTime() > new Date(latest).getTime() ? a.date : latest;
+  }, null);
+  const inactiveWeeks = weeksSinceActivity(lastActivityAt);
+
   return (
     <div className="w-full min-h-screen bg-[#EBF0EB] py-8" dir="rtl">
       <div className="container mx-auto px-4 lg:px-12 max-w-3xl flex flex-col gap-6">
@@ -288,9 +295,31 @@ export default async function ProfilePage({
           />
         </div>
 
+        {/* A member who has recorded nothing for weeks has usually stopped coming.
+            Only an administrator sees this: reaching out is theirs to do, and a
+            supervisor's part is limited to recitation and reading. */}
+        {viewerIsAdmin && isLongInactive(lastActivityAt) && (
+          <div className="bg-[#F4E0D6] border border-[#9B3D2E]/30 rounded-3xl p-5 md:p-6 flex items-start gap-3">
+            <div className="w-9 h-9 shrink-0 rounded-xl bg-[#9B3D2E]/10 text-[#9B3D2E] flex items-center justify-center">
+              <BellRing className="w-4 h-4" strokeWidth={2.4} />
+            </div>
+            <div className="flex flex-col gap-1 min-w-0">
+              <h3 className={`${lalezar.className} text-lg text-[#9B3D2E] leading-none`}>
+                منقطع عن النشاط
+              </h3>
+              <p className={`${tajawal.className} text-sm text-[#9B3D2E]/90 leading-relaxed`}>
+                {inactiveWeeks === null
+                  ? "لم يسجّل هذا العضو أي نشاط منذ انضمامه."
+                  : `آخر نشاط لهذا العضو كان قبل ${toArabicDigits(inactiveWeeks)} أسبوعًا.`}{" "}
+                يُستحسن التواصل معه والاطمئنان عليه.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Stats (points always visible) */}
         <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm p-5 md:p-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="bg-[#BEE663] rounded-2xl border border-[#043F2E]/15 px-4 py-3 flex flex-col gap-1">
               <span className={`${tajawal.className} text-[11px] font-medium text-[#043F2E]/70`}>النقاط</span>
               <span className={`${lalezar.className} text-2xl text-[#043F2E]`}>
@@ -306,14 +335,6 @@ export default async function ProfilePage({
                 </span>
               </div>
             )}
-            <div className="bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 flex flex-col gap-1">
-              <span className={`${tajawal.className} text-[11px] font-medium text-[#043F2E]/50`}>الدور</span>
-              <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                {getRoles(targetUser.groups || []).map((r) => (
-                  <RoleBadge key={r} role={r} size="sm" />
-                ))}
-              </div>
-            </div>
           </div>
         </div>
 

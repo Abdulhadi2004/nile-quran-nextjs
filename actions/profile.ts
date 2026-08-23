@@ -311,6 +311,17 @@ export async function getStudentRank(
   }
 }
 
+// The most recent activity of any kind, used to spot a member who has stopped
+function latestActivityDate(activities?: ApiActivity[]): string | null {
+  if (!activities || activities.length === 0) return null;
+  let latest = 0;
+  for (const a of activities) {
+    const t = new Date(a.date).getTime();
+    if (!Number.isNaN(t) && t > latest) latest = t;
+  }
+  return latest > 0 ? new Date(latest).toISOString() : null;
+}
+
 // ===============================
 // Get Supervised Students (Moderator only)
 // ===============================
@@ -329,6 +340,7 @@ export async function getSupervisedStudents(
       activities_count: number;
       weekly_activities_count: number;
       recited_this_week: boolean;
+      last_activity_at: string | null;
     }>
   >
 > {
@@ -381,6 +393,7 @@ export async function getSupervisedStudents(
         activities_count: pointsInfo?.activities?.length ?? 0,
         weekly_activities_count: weekInfo?.activities?.length ?? 0,
         recited_this_week: (recitationInfo?.activities?.length ?? 0) > 0,
+        last_activity_at: latestActivityDate(pointsInfo?.activities),
       };
     });
 
@@ -473,6 +486,70 @@ export async function getStudentActivities(
   } catch (error) {
     console.error("Error fetching student activities:", error);
     return { success: false, error: "تعذّر تحميل الأنشطة" };
+  }
+}
+
+// ===============================
+// Change a Student Activity's Category (Moderator/Admin)
+// ===============================
+// A supervisor who recorded reading where they meant recitation should be able to
+// correct it without deleting and re-recording. Both the old and the new category
+// must be within a supervisor's scope, checked here and not only in the browser.
+
+export async function updateStudentActivityCategory(
+  studentId: number,
+  activityId: number,
+  categoryId: number,
+): Promise<FetchResult<null>> {
+  try {
+    const token = await getToken();
+    if (!token) throw new Error("No access token");
+
+    if (!SUPERVISOR_MANAGED_CATEGORY_IDS.includes(categoryId)) {
+      return { success: false, error: "هذا النوع من الأنشطة يسجّله المدراء" };
+    }
+
+    const activity = await fetchJson<ApiActivity>(
+      `${API_BASE}api/v1/users/${studentId}/activities/${activityId}/`,
+      token,
+    );
+    if (!SUPERVISOR_MANAGED_CATEGORY_IDS.includes(activity.category)) {
+      return { success: false, error: "هذا النوع من الأنشطة يسجّله المدراء" };
+    }
+    if (activity.category === categoryId) {
+      return { success: true, data: null };
+    }
+
+    const res = await fetch(
+      `${API_BASE}api/v1/users/${studentId}/activities/${activityId}/`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Accept-Language": "ar",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ category: categoryId }),
+        cache: "no-store",
+      },
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      let errorMsg = `تعذّر تعديل النشاط (${res.status})`;
+      try {
+        const data = JSON.parse(text);
+        errorMsg = data?.detail || data?.error || errorMsg;
+      } catch {
+        // not JSON
+      }
+      return { success: false, error: errorMsg };
+    }
+
+    return { success: true, data: null };
+  } catch (error) {
+    console.error("Error updating student activity category:", error);
+    return { success: false, error: "تعذّر تعديل النشاط" };
   }
 }
 

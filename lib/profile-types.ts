@@ -41,6 +41,8 @@ export interface SupervisedStudent {
   activities_count: number;
   weekly_activities_count: number;
   recited_this_week: boolean;
+  /** ISO date of the member's most recent activity of any kind, null if they never had one */
+  last_activity_at: string | null;
 }
 
 // ===============================
@@ -51,6 +53,26 @@ export interface SupervisedStudent {
 // control board. The API lets a supervisor touch any category of their own
 // students, so this list is what both the profile UI and its server actions
 // enforce; keep them reading the same constant.
+
+// A member who has recorded nothing for this long has usually stopped coming.
+// Their supervisor is told so they can follow up on recitation and reading;
+// an administrator is told because they are the one who can reach out.
+export const INACTIVITY_ALERT_WEEKS = 8;
+
+export function weeksSinceActivity(lastActivityAt: string | null): number | null {
+  if (!lastActivityAt) return null;
+  const last = new Date(lastActivityAt);
+  if (Number.isNaN(last.getTime())) return null;
+  const days = (Date.now() - last.getTime()) / 86_400_000;
+  return Math.floor(days / 7);
+}
+
+// Never active at all counts as needing follow-up just as much as long-lapsed
+export function isLongInactive(lastActivityAt: string | null): boolean {
+  if (!lastActivityAt) return true;
+  const weeks = weeksSinceActivity(lastActivityAt);
+  return weeks !== null && weeks >= INACTIVITY_ALERT_WEEKS;
+}
 
 export const CAT_RECITATION = 4; // تسميع القرآن
 export const CAT_QURAN_READING = 3; // قراءة القرآن

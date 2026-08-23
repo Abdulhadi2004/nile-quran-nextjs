@@ -11,8 +11,8 @@ import {
   User,
   BookOpen,
   Inbox,
-  ExternalLink,
   BookMarked,
+  Pencil,
   X,
   Plus,
   Loader2,
@@ -29,8 +29,13 @@ import {
   addStudentActivity,
   getStudentActivities,
   deleteStudentActivity,
+  updateStudentActivityCategory,
 } from "@/actions/profile";
-import { SUPERVISOR_MANAGED_CATEGORY_IDS } from "@/lib/profile-types";
+import {
+  SUPERVISOR_MANAGED_CATEGORY_IDS,
+  isLongInactive,
+  weeksSinceActivity,
+} from "@/lib/profile-types";
 import type { SupervisedStudent } from "@/lib/profile-types";
 
 const lalezar = Lalezar({ subsets: ["arabic"], weight: "400" });
@@ -72,11 +77,10 @@ export default function ModeratorProfileView({
 }: Props) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"points" | "name">("points");
-  const [addActivityStudent, setAddActivityStudent] = useState<SupervisedStudent | null>(null);
-  const [manageStudent, setManageStudent] = useState<SupervisedStudent | null>(null);
+  const [sheetStudent, setSheetStudent] = useState<SupervisedStudent | null>(null);
 
-  // Stable so the modal's Escape listener is not rebound on every parent render
-  const closeManage = useCallback(() => setManageStudent(null), []);
+  // Stable so the sheet's Escape listener is not rebound on every parent render
+  const closeSheet = useCallback(() => setSheetStudent(null), []);
 
   const filtered = useMemo(() => {
     let result = [...students];
@@ -111,19 +115,6 @@ export default function ModeratorProfileView({
     return { total, totalPoints, avg, activeStudents };
   }, [students]);
 
-  // Whoever has not recited yet this week is the supervisor's actual work
-  const needFollowUp = useMemo(
-    () =>
-      students
-        .filter((s) => !s.recited_this_week)
-        .sort((a, b) => {
-          const nameA = `${a.first_name} ${a.last_name}`.trim();
-          const nameB = `${b.first_name} ${b.last_name}`.trim();
-          return nameA.localeCompare(nameB, "ar");
-        }),
-    [students],
-  );
-
   return (
     <div className="flex flex-col gap-6" dir="rtl">
       {/* Quick Stats */}
@@ -133,60 +124,6 @@ export default function ModeratorProfileView({
         <StatCard label="متوسط النقاط" value={toArabicDigits(stats.avg)} icon={<Award className="w-5 h-5" strokeWidth={2.2} />} />
         <StatCard label="الطلاب النشطون هذا الأسبوع" value={toArabicDigits(stats.activeStudents)} icon={<BookOpen className="w-5 h-5" strokeWidth={2.2} />} />
       </div>
-
-      {/* Who has not recited this week */}
-      {students.length > 0 && (
-        <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm p-5 md:p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-8 h-8 rounded-lg bg-[#F7FBEA] text-[#043F2E]/70 flex items-center justify-center shrink-0">
-              <BellRing className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />
-            </div>
-            <h3 className={`${lalezar.className} text-lg text-[#043F2E] leading-none`}>
-              من يحتاج إلى متابعة
-            </h3>
-          </div>
-          <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 mb-4`}>
-            {needFollowUp.length > 0
-              ? `لم يسجّلوا تسميعًا هذا الأسبوع — ${toArabicDigits(needFollowUp.length)} من ${toArabicDigits(students.length)}`
-              : "متابعة التسميع الأسبوعي"}
-          </p>
-
-          {needFollowUp.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              {needFollowUp.map((student) => {
-                const fullName = `${student.first_name} ${student.last_name}`.trim() || student.username;
-                return (
-                  <div
-                    key={student.id}
-                    className="flex items-center gap-3 bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-2.5"
-                  >
-                    <Link
-                      href={`/profile/${student.id}`}
-                      className={`${tajawal.className} flex-1 min-w-0 text-sm font-bold text-[#043F2E] truncate hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2 rounded`}
-                    >
-                      {fullName}
-                    </Link>
-                    <button
-                      onClick={() => setAddActivityStudent(student)}
-                      className={`${tajawal.className} shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-[#065f46] text-[#BEE663] text-xs font-bold whitespace-nowrap hover:bg-[#043F2E] transition-colors`}
-                    >
-                      <Plus className="w-3.5 h-3.5 shrink-0" strokeWidth={2.4} aria-hidden="true" />
-                      تسجيل تسميع
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 bg-[#DEFF90] border border-[#9ADD00]/40 rounded-2xl px-4 py-3">
-              <Check className="w-4 h-4 text-[#043F2E] shrink-0" strokeWidth={2.5} aria-hidden="true" />
-              <p className={`${tajawal.className} text-sm font-medium text-[#043F2E]`}>
-                كل طلاب حلقتك سمّعوا هذا الأسبوع، بارك الله فيهم
-              </p>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Students list */}
       <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm overflow-hidden">
@@ -203,7 +140,7 @@ export default function ModeratorProfileView({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="ابحث عن طالب بالاسم..."
+              placeholder="ابحث بالاسم أو اسم المستخدم..."
               className={`${tajawal.className} w-full h-12 pr-11 pl-4 bg-[#F7FBEA] border border-[#043F2E]/15 rounded-2xl text-[#043F2E] placeholder:text-[#043F2E]/40 focus:outline-none focus:border-[#043F2E]/40 focus:bg-white transition-colors text-sm font-medium`}
             />
           </div>
@@ -250,10 +187,10 @@ export default function ModeratorProfileView({
             {/* Desktop header */}
             <div className="hidden md:flex bg-[#F7FBEA] border-b border-[#043F2E]/10 px-5 py-3 gap-3">
               <div className="w-[44px] shrink-0" />
-              <div className="w-[170px] shrink-0"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الطالب</span></div>
+              <div className="flex-1 min-w-0"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الطالب</span></div>
               <div className="w-[90px] shrink-0 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الأنشطة</span></div>
-              <div className="flex-1 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>النقاط</span></div>
-              <div className="w-[250px] shrink-0 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الإجراءات</span></div>
+              <div className="w-[90px] shrink-0 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>النقاط</span></div>
+              <div className="w-[70px] shrink-0 text-center"><span className={`${tajawal.className} text-[12px] font-bold text-[#043F2E]`}>الإجراءات</span></div>
             </div>
 
             <div className="hidden md:flex flex-col">
@@ -274,9 +211,17 @@ export default function ModeratorProfileView({
                       </span>
                     </div>
 
-                    {/* Name */}
-                    <div className="w-[170px] shrink-0 min-w-0">
-                      <p className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate`}>{fullName || student.username}</p>
+                    {/* Name — the name itself is the way into the member's profile */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Link
+                          href={`/profile/${student.id}`}
+                          className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2 rounded`}
+                        >
+                          {fullName || student.username}
+                        </Link>
+                        <FollowUpBadge student={student} />
+                      </div>
                       <p className={`${tajawal.className} text-[10px] text-[#043F2E]/40`}>@{student.username}</p>
                     </div>
 
@@ -288,35 +233,22 @@ export default function ModeratorProfileView({
                     </div>
 
                     {/* Points */}
-                    <div className="flex-1 flex justify-center">
+                    <div className="w-[90px] shrink-0 flex justify-center">
                       <span className={`${tajawal.className} min-w-[48px] h-9 px-3 flex items-center justify-center rounded-xl font-bold text-sm ${student.points > 0 ? "bg-[#BEE663] text-[#043F2E]" : "bg-[#F7FBEA] text-[#043F2E]/40"}`}>
                         {toArabicDigits(student.points)}
                       </span>
                     </div>
 
-                    {/* Actions */}
-                    <div className="w-[250px] shrink-0 flex items-center justify-center gap-2">
+                    {/* One control per student — it opens the activity sheet */}
+                    <div className="w-[70px] shrink-0 flex items-center justify-center">
                       <button
-                        onClick={() => setAddActivityStudent(student)}
-                        className={`${tajawal.className} inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-[#065f46] text-[#BEE663] text-xs font-bold hover:bg-[#043F2E] transition-colors`}
+                        onClick={() => setSheetStudent(student)}
+                        aria-label={`أنشطة ${fullName || student.username}`}
+                        title="الأنشطة"
+                        className="w-10 h-10 rounded-xl bg-[#065f46] text-[#BEE663] flex items-center justify-center hover:bg-[#043F2E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2"
                       >
-                        <Plus className="w-3.5 h-3.5" strokeWidth={2.4} />
-                        نشاط
+                        <ClipboardList className="w-4 h-4" strokeWidth={2.4} aria-hidden="true" />
                       </button>
-                      <button
-                        onClick={() => setManageStudent(student)}
-                        className={`${tajawal.className} inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-[#F7FBEA] border border-[#043F2E]/15 text-[#043F2E] text-xs font-bold whitespace-nowrap hover:bg-[#BEE663]/30 transition-colors`}
-                      >
-                        <ClipboardList className="w-3.5 h-3.5 shrink-0" strokeWidth={2.4} />
-                        سجلّ الأنشطة
-                      </button>
-                      <Link
-                        href={`/profile/${student.id}`}
-                        aria-label={`عرض ملف ${fullName || student.username}`}
-                        className={`${tajawal.className} inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-[#043F2E] text-white text-xs font-bold hover:bg-[#065f46] transition-colors`}
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" strokeWidth={2.4} />
-                      </Link>
                     </div>
                   </div>
                 );
@@ -336,39 +268,31 @@ export default function ModeratorProfileView({
                         <span className={`${tajawal.className} text-base font-bold`}>{initials || <User className="w-5 h-5" strokeWidth={2.2} />}</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={`${tajawal.className} text-base font-bold text-[#043F2E] truncate`}>{fullName || student.username}</p>
+                        <Link
+                          href={`/profile/${student.id}`}
+                          className={`${tajawal.className} block text-base font-bold text-[#043F2E] truncate hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2 rounded`}
+                        >
+                          {fullName || student.username}
+                        </Link>
                         <p className={`${tajawal.className} text-[10px] text-[#043F2E]/40`}>
                           @{student.username} · الأنشطة: {toArabicDigits(student.activities_count)}
                         </p>
+                        <div className="mt-1.5">
+                          <FollowUpBadge student={student} />
+                        </div>
                       </div>
                       <span className={`${tajawal.className} shrink-0 min-w-[48px] h-9 px-3 flex items-center justify-center rounded-xl font-bold text-sm ${student.points > 0 ? "bg-[#BEE663] text-[#043F2E]" : "bg-white text-[#043F2E]/40 border border-[#043F2E]/10"}`}>
                         {toArabicDigits(student.points)}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setAddActivityStudent(student)}
-                        className={`${tajawal.className} flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-[#065f46] text-[#BEE663] text-xs font-bold hover:bg-[#043F2E] transition-colors`}
-                      >
-                        <Plus className="w-3.5 h-3.5" strokeWidth={2.4} />
-                        نشاط
-                      </button>
-                      <button
-                        onClick={() => setManageStudent(student)}
-                        className={`${tajawal.className} flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-white border border-[#043F2E]/15 text-[#043F2E] text-xs font-bold hover:bg-[#BEE663]/30 transition-colors`}
-                      >
-                        <ClipboardList className="w-3.5 h-3.5" strokeWidth={2.4} />
-                        السجلّ
-                      </button>
-                      <Link
-                        href={`/profile/${student.id}`}
-                        aria-label={`عرض ملف ${fullName || student.username}`}
-                        className={`${tajawal.className} flex-1 flex items-center justify-center gap-1.5 h-10 rounded-xl bg-[#043F2E] text-white text-xs font-bold hover:bg-[#065f46] transition-colors`}
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" strokeWidth={2.4} />
-                      </Link>
-                    </div>
+                    <button
+                      onClick={() => setSheetStudent(student)}
+                      className={`${tajawal.className} w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-[#065f46] text-[#BEE663] text-sm font-bold hover:bg-[#043F2E] transition-colors`}
+                    >
+                      <ClipboardList className="w-4 h-4" strokeWidth={2.4} aria-hidden="true" />
+                      الأنشطة
+                    </button>
                   </div>
                 );
               })}
@@ -377,23 +301,14 @@ export default function ModeratorProfileView({
         )}
       </div>
 
-      {/* Add Activity Modal */}
-      {addActivityStudent && (
-        <AddActivityModal
-          student={addActivityStudent}
-          categories={categories}
-          onClose={() => setAddActivityStudent(null)}
-        />
-      )}
-
-      {/* Activity Log Modal */}
-      {manageStudent && (
-        <ActivityLogModal
-          key={manageStudent.id}
-          student={manageStudent}
+      {/* One sheet per student: record, correct, or remove */}
+      {sheetStudent && (
+        <ActivitySheet
+          key={sheetStudent.id}
+          student={sheetStudent}
           categories={categories}
           viewerIsAdmin={viewerIsAdmin}
-          onClose={closeManage}
+          onClose={closeSheet}
         />
       )}
     </div>
@@ -401,9 +316,11 @@ export default function ModeratorProfileView({
 }
 
 // ============================
-// Activity Log Modal — review and remove recitation/reading activities
+// Activity Sheet — record, correct, or remove, in one place
 // ============================
-function ActivityLogModal({
+type SheetMode = "add" | "manage";
+
+function ActivitySheet({
   student,
   categories,
   viewerIsAdmin,
@@ -415,47 +332,37 @@ function ActivityLogModal({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const [mode, setMode] = useState<SheetMode>("add");
   const [activities, setActivities] = useState<ActivityItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [isPending, startTransition] = useTransition();
   const closeRef = useRef<HTMLButtonElement>(null);
   const busyRef = useRef(false);
 
   const fullName = `${student.first_name} ${student.last_name}`.trim() || student.username;
   const initials = `${student.first_name?.charAt(0) || ""}${student.last_name?.charAt(0) || ""}`.trim();
-  const categoryById = new Map(categories.map((c) => [c.id, c]));
-  const isDeleting = deletingId !== null;
 
-  // Read by the Escape handler, which is bound once and cannot see fresh state
-  busyRef.current = isDeleting;
+  // The two categories a supervisor may touch, with names and values from the API
+  const availableCategories = SUPERVISOR_MANAGED_CATEGORY_IDS.map((id) =>
+    categories.find((c) => c.id === id),
+  ).filter((c): c is ActivityCategory => Boolean(c));
 
-  // Don't let a delete get abandoned halfway
+  const [categoryId, setCategoryId] = useState<number>(
+    availableCategories[0]?.id ?? CAT_TASMEE,
+  );
+  const selectedCategory = availableCategories.find((c) => c.id === categoryId);
+
+  const isBusy = busyId !== null || isPending;
+  busyRef.current = isBusy;
+
   const requestClose = () => {
     if (!busyRef.current) onClose();
   };
 
-  useEffect(() => {
-    let active = true;
-    getStudentActivities(student.id).then((res) => {
-      if (!active) return;
-      if (res.success && res.data) {
-        // A supervisor only manages recitation and reading; the rest is the control board's
-        setActivities(
-          res.data
-            .filter((a) => SUPERVISOR_MANAGED_CATEGORY_IDS.includes(a.category))
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-        );
-      } else {
-        setError(res.error || "تعذّر تحميل الأنشطة");
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, [student.id]);
-
-  // The dialog takes focus on open, and the button that opened it gets focus back on close
+  // The dialog takes focus on open, and the button that opened it gets focus back
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
@@ -470,9 +377,67 @@ function ActivityLogModal({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
+  const loadActivities = useCallback(() => {
+    setActivities(null);
+    setError(null);
+    getStudentActivities(student.id).then((res) => {
+      if (res.success && res.data) {
+        setActivities(
+          res.data
+            .filter((a) => SUPERVISOR_MANAGED_CATEGORY_IDS.includes(a.category))
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+        );
+      } else {
+        setError(res.error || "تعذّر تحميل الأنشطة");
+      }
+    });
+  }, [student.id]);
+
+  // Only fetch the log when the reader actually asks to see it
+  useEffect(() => {
+    if (mode === "manage" && activities === null && !error) loadActivities();
+  }, [mode, activities, error, loadActivities]);
+
+  const handleRecord = () => {
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const res = await addStudentActivity(student.id, categoryId, 1);
+      if (res.success) {
+        setNotice(`تم تسجيل ${selectedCategory?.name ?? "النشاط"} باسم ${fullName}`);
+        setActivities(null);
+        router.refresh();
+      } else {
+        setError(res.error || "تعذّر تسجيل النشاط");
+      }
+    });
+  };
+
+  const handleChangeCategory = async (activityId: number, nextCategoryId: number) => {
+    setError(null);
+    setNotice(null);
+    setBusyId(activityId);
+    try {
+      const res = await updateStudentActivityCategory(student.id, activityId, nextCategoryId);
+      if (res.success) {
+        setActivities((prev) =>
+          (prev ?? []).map((a) => (a.id === activityId ? { ...a, category: nextCategoryId } : a)),
+        );
+        router.refresh();
+      } else {
+        setError(res.error || "تعذّر تعديل النشاط");
+      }
+    } catch {
+      setError("تعذّر الاتصال، حاول مرة أخرى");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleDelete = async (activityId: number) => {
     setError(null);
-    setDeletingId(activityId);
+    setNotice(null);
+    setBusyId(activityId);
     try {
       const res = await deleteStudentActivity(student.id, activityId);
       if (res.success) {
@@ -485,16 +450,21 @@ function ActivityLogModal({
     } catch {
       setError("تعذّر الاتصال، حاول مرة أخرى");
     } finally {
-      setDeletingId(null);
+      setBusyId(null);
     }
   };
+
+  const tabClass = (active: boolean) =>
+    `${tajawal.className} flex-1 h-10 rounded-xl text-sm font-bold transition-colors inline-flex items-center justify-center gap-1.5 ${
+      active ? "bg-[#043F2E] text-white shadow-sm" : "bg-white text-[#043F2E] hover:bg-[#BEE663] shadow-sm"
+    }`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#043F2E]/40 p-4" onClick={requestClose}>
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`سجلّ أنشطة ${fullName}`}
+        aria-label={`أنشطة ${fullName}`}
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[440px] max-h-[85vh] overflow-y-auto bg-white rounded-3xl border border-[#043F2E]/10 shadow-lg p-5 flex flex-col gap-4"
         dir="rtl"
@@ -503,25 +473,27 @@ function ActivityLogModal({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-[#043F2E] flex items-center justify-center">
-              <ClipboardList className="w-4 h-4 text-[#BEE663]" strokeWidth={2.4} />
+              <ClipboardList className="w-4 h-4 text-[#BEE663]" strokeWidth={2.4} aria-hidden="true" />
             </div>
-            <h3 className={`${lalezar.className} text-lg text-[#043F2E]`}>سجلّ الأنشطة</h3>
+            <h3 className={`${lalezar.className} text-lg text-[#043F2E]`}>الأنشطة</h3>
           </div>
           <button
             ref={closeRef}
             onClick={requestClose}
-            disabled={isDeleting}
+            disabled={isBusy}
             aria-label="إغلاق"
             className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center text-[#043F2E]/60 hover:bg-[#F7FBEA] hover:text-[#043F2E] transition-colors disabled:opacity-50"
           >
-            <X className="w-4 h-4" strokeWidth={2.2} />
+            <X className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />
           </button>
         </div>
 
-        {/* Student info */}
+        {/* Student */}
         <div className="flex items-center gap-3 bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3">
           <div className="w-10 h-10 shrink-0 rounded-full bg-gradient-to-br from-[#043F2E] to-[#065f46] flex items-center justify-center text-white shadow-sm">
-            <span className={`${tajawal.className} text-xs font-bold`}>{initials || <User className="w-4 h-4" strokeWidth={2.2} />}</span>
+            <span className={`${tajawal.className} text-xs font-bold`}>
+              {initials || <User className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />}
+            </span>
           </div>
           <div className="flex flex-col min-w-0">
             <span className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate`}>{fullName}</span>
@@ -529,24 +501,89 @@ function ActivityLogModal({
           </div>
         </div>
 
-        {/* Scope note — the log deliberately shows only what a supervisor may change.
-            The control board is named only for a reader who can actually open it. */}
+        {/* Mode */}
+        <div className="flex items-center gap-1.5 bg-[#F7FBEA] border border-[#043F2E]/15 rounded-2xl p-1.5">
+          <button onClick={() => setMode("add")} className={tabClass(mode === "add")}>
+            <Plus className="w-4 h-4 shrink-0" strokeWidth={2.4} aria-hidden="true" />
+            تسجيل
+          </button>
+          <button onClick={() => setMode("manage")} className={tabClass(mode === "manage")}>
+            <Pencil className="w-4 h-4 shrink-0" strokeWidth={2.4} aria-hidden="true" />
+            تعديل
+          </button>
+        </div>
+
         <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 leading-relaxed`}>
-          تظهر هنا أنشطة التسميع والقراءة فقط، وهي ما يمكنك تسجيله أو حذفه لطلابك.{" "}
+          تظهر هنا أنشطة التسميع والقراءة فقط، وهي ما يمكنك تسجيله أو تعديله أو حذفه لطلابك.{" "}
           {viewerIsAdmin
             ? "أما باقي الأنشطة فتُسجَّل من لوحة التحكم."
             : "أما باقي الأنشطة فيسجّلها المدراء."}
         </p>
 
-        {/* Error */}
         {error && (
           <div role="alert" className="flex items-center gap-2 rounded-xl bg-[#F4E0D6] border border-[#9B3D2E]/30 px-3 py-2.5">
-            <AlertCircle className="w-4 h-4 text-[#9B3D2E] shrink-0" strokeWidth={2.2} />
+            <AlertCircle className="w-4 h-4 text-[#9B3D2E] shrink-0" strokeWidth={2.2} aria-hidden="true" />
             <span className={`${tajawal.className} text-xs text-[#9B3D2E]`}>{error}</span>
           </div>
         )}
 
-        {activities === null && !error ? (
+        {notice && (
+          <div role="status" className="flex items-center gap-2 rounded-xl bg-[#DEFF90] border border-[#9ADD00]/40 px-3 py-2.5">
+            <Check className="w-4 h-4 text-[#043F2E] shrink-0" strokeWidth={2.5} aria-hidden="true" />
+            <span className={`${tajawal.className} text-xs text-[#043F2E]`}>{notice}</span>
+          </div>
+        )}
+
+        {mode === "add" ? (
+          <>
+            <div className="flex flex-col gap-2">
+              <label className={`${tajawal.className} text-xs font-bold text-[#043F2E]/70`}>نوع النشاط</label>
+              <div className="grid grid-cols-2 gap-2">
+                {availableCategories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setCategoryId(cat.id)}
+                    disabled={isPending}
+                    aria-pressed={categoryId === cat.id}
+                    className={`${tajawal.className} flex flex-col items-center gap-1.5 h-auto py-3 rounded-2xl border-2 text-xs font-bold transition-all ${
+                      categoryId === cat.id
+                        ? "border-[#043F2E] bg-[#043F2E] text-white"
+                        : "border-[#043F2E]/15 bg-[#F7FBEA] text-[#043F2E]/70 hover:border-[#043F2E]/40"
+                    } disabled:opacity-50`}
+                  >
+                    {cat.id === CAT_TASMEE ? (
+                      <BookMarked className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />
+                    ) : (
+                      <BookOpen className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />
+                    )}
+                    {cat.name}
+                    <span className={`text-[10px] font-medium ${categoryId === cat.id ? "text-[#BEE663]" : "text-[#043F2E]/60"}`}>
+                      النقاط: +{toArabicDigits(cat.value)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={handleRecord}
+              disabled={isPending || !selectedCategory}
+              className={`${tajawal.className} h-12 rounded-xl bg-[#043F2E] text-white text-sm font-bold hover:bg-[#065f46] transition-colors disabled:opacity-50 flex items-center justify-center gap-2`}
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} aria-hidden="true" />
+                  جارٍ التسجيل...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" strokeWidth={2.4} aria-hidden="true" />
+                  تسجيل النشاط
+                </>
+              )}
+            </button>
+          </>
+        ) : activities === null && !error ? (
           <div className="flex flex-col gap-2">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="h-14 rounded-2xl bg-[#F7FBEA] animate-pulse" />
@@ -555,70 +592,98 @@ function ActivityLogModal({
         ) : activities === null ? null : activities.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <div className="w-14 h-14 rounded-2xl bg-[#F7FBEA] flex items-center justify-center mb-3">
-              <Inbox className="w-6 h-6 text-[#043F2E]/40" strokeWidth={1.8} />
+              <Inbox className="w-6 h-6 text-[#043F2E]/40" strokeWidth={1.8} aria-hidden="true" />
             </div>
             <p className={`${tajawal.className} text-sm text-[#043F2E]/60`}>لا توجد أنشطة تسميع أو قراءة</p>
           </div>
         ) : (
           <div className="flex flex-col gap-2">
             {activities.map((act) => {
-              const cat = categoryById.get(act.category);
+              const cat = categories.find((c) => c.id === act.category);
               const activityName = cat?.name ?? "نشاط";
               const activityDate = formatArabicDate(act.date);
               const isConfirming = confirmingId === act.id;
-              const isRowDeleting = deletingId === act.id;
+              const isRowBusy = busyId === act.id;
 
               return (
-                <div
-                  key={act.id}
-                  className="bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 flex items-center gap-3"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate`}>
-                      {activityName}
-                    </p>
-                    <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 flex items-center gap-1`}>
-                      <Calendar className="w-3 h-3" strokeWidth={2.2} />
-                      {activityDate}
-                    </p>
+                <div key={act.id} className="bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 flex flex-col gap-2.5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate`}>{activityName}</p>
+                      <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 flex items-center gap-1`}>
+                        <Calendar className="w-3 h-3" strokeWidth={2.2} aria-hidden="true" />
+                        {activityDate}
+                      </p>
+                    </div>
+
+                    {cat && (
+                      <span className={`${tajawal.className} text-xs font-bold text-[#043F2E] bg-[#BEE663] rounded-full px-2 py-0.5 shrink-0`}>
+                        +{toArabicDigits(cat.value * act.multiplier)}
+                      </span>
+                    )}
+
+                    {isConfirming ? (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          autoFocus
+                          onClick={() => handleDelete(act.id)}
+                          disabled={isBusy}
+                          className={`${tajawal.className} h-8 px-2.5 rounded-lg bg-[#9B3D2E] text-white text-[11px] font-bold hover:bg-[#9B3D2E]/90 transition-colors disabled:opacity-50 flex items-center gap-1`}
+                        >
+                          {isRowBusy ? (
+                            <Loader2 className="w-3 h-3 animate-spin" strokeWidth={2.5} aria-hidden="true" />
+                          ) : (
+                            <Check className="w-3 h-3" strokeWidth={2.5} aria-hidden="true" />
+                          )}
+                          تأكيد الحذف
+                        </button>
+                        <button
+                          onClick={() => setConfirmingId(null)}
+                          disabled={isBusy}
+                          aria-label="إلغاء الحذف"
+                          className="w-8 h-8 rounded-lg bg-white border border-[#043F2E]/15 flex items-center justify-center text-[#043F2E]/60 hover:text-[#043F2E] transition-colors disabled:opacity-50"
+                        >
+                          <X className="w-3.5 h-3.5" strokeWidth={2.5} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmingId(act.id)}
+                        disabled={isBusy}
+                        aria-label={`حذف ${activityName} بتاريخ ${activityDate}`}
+                        title="حذف"
+                        className="w-8 h-8 shrink-0 rounded-lg bg-white border border-[#043F2E]/15 flex items-center justify-center text-[#043F2E]/60 hover:border-[#9B3D2E]/40 hover:text-[#9B3D2E] transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" strokeWidth={2.2} aria-hidden="true" />
+                      </button>
+                    )}
                   </div>
 
-                  {/* Points come from the category; with no category loaded there is no honest number to show */}
-                  {cat && (
-                    <span className={`${tajawal.className} text-xs font-bold text-[#043F2E] bg-[#BEE663] rounded-full px-2 py-0.5 shrink-0`}>
-                      +{toArabicDigits(cat.value * act.multiplier)}
-                    </span>
-                  )}
-
-                  {isConfirming ? (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        autoFocus
-                        onClick={() => handleDelete(act.id)}
-                        disabled={isDeleting}
-                        className={`${tajawal.className} h-8 px-2.5 rounded-lg bg-[#9B3D2E] text-white text-[11px] font-bold hover:bg-[#9B3D2E]/90 transition-colors disabled:opacity-50 flex items-center gap-1`}
-                      >
-                        {isRowDeleting ? <Loader2 className="w-3 h-3 animate-spin" strokeWidth={2.5} /> : <Check className="w-3 h-3" strokeWidth={2.5} />}
-                        تأكيد الحذف
-                      </button>
-                      <button
-                        onClick={() => setConfirmingId(null)}
-                        disabled={isDeleting}
-                        className="w-8 h-8 rounded-lg bg-white border border-[#043F2E]/15 flex items-center justify-center text-[#043F2E]/60 hover:text-[#043F2E] transition-colors disabled:opacity-50"
-                        aria-label="إلغاء الحذف"
-                      >
-                        <X className="w-3.5 h-3.5" strokeWidth={2.5} />
-                      </button>
+                  {/* Correcting the type is the whole of "edit" — there is nothing else to change */}
+                  {!isConfirming && availableCategories.length > 1 && (
+                    <div className="flex items-center gap-1.5">
+                      {availableCategories.map((option) => {
+                        const active = option.id === act.category;
+                        return (
+                          <button
+                            key={option.id}
+                            onClick={() => !active && handleChangeCategory(act.id, option.id)}
+                            disabled={isBusy || active}
+                            aria-pressed={active}
+                            className={`${tajawal.className} flex-1 h-8 rounded-lg text-[11px] font-bold transition-colors inline-flex items-center justify-center gap-1 ${
+                              active
+                                ? "bg-[#043F2E] text-white"
+                                : "bg-white border border-[#043F2E]/15 text-[#043F2E]/70 hover:bg-[#BEE663]/30 hover:text-[#043F2E]"
+                            } disabled:cursor-default`}
+                          >
+                            {isRowBusy && !active ? (
+                              <Loader2 className="w-3 h-3 animate-spin" strokeWidth={2.5} aria-hidden="true" />
+                            ) : null}
+                            {option.name}
+                          </button>
+                        );
+                      })}
                     </div>
-                  ) : (
-                    <button
-                      onClick={() => setConfirmingId(act.id)}
-                      disabled={isDeleting}
-                      className="w-8 h-8 shrink-0 rounded-lg bg-white border border-[#043F2E]/15 flex items-center justify-center text-[#043F2E]/60 hover:border-[#9B3D2E]/40 hover:text-[#9B3D2E] transition-colors disabled:opacity-50"
-                      aria-label={`حذف ${activityName} بتاريخ ${activityDate}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" strokeWidth={2.2} />
-                    </button>
                   )}
                 </div>
               );
@@ -631,136 +696,43 @@ function ActivityLogModal({
 }
 
 // ============================
-// Add Activity Modal
+// Follow-up Badge
 // ============================
-function AddActivityModal({
-  student,
-  categories,
-  onClose,
-}: {
-  student: SupervisedStudent;
-  categories: ActivityCategory[];
-  onClose: () => void;
-}) {
-  const router = useRouter();
-  // Categories a supervisor may record, with labels + values from the API
-  const availableCategories = SUPERVISOR_MANAGED_CATEGORY_IDS.map((id) =>
-    categories.find((c) => c.id === id),
-  ).filter((c): c is ActivityCategory => Boolean(c));
-
-  const [categoryId, setCategoryId] = useState<number>(
-    availableCategories[0]?.id ?? CAT_TASMEE,
-  );
-  const [isPending, startTransition] = useTransition();
-  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
-
-  const fullName = `${student.first_name} ${student.last_name}`.trim() || student.username;
-  const initials = `${student.first_name?.charAt(0) || ""}${student.last_name?.charAt(0) || ""}`.trim();
-  const selectedCategory = availableCategories.find((c) => c.id === categoryId);
-
-  const handleSubmit = () => {
-    setResult(null);
-    startTransition(async () => {
-      const res = await addStudentActivity(student.id, categoryId, 1);
-      if (res.success) {
-        setResult({
-          success: true,
-          message: `تم تسجيل ${selectedCategory?.name ?? "النشاط"} باسم ${fullName}`,
-        });
-        router.refresh();
-        setTimeout(onClose, 1500);
-      } else {
-        setResult({ success: false, message: res.error || "تعذّر تسجيل النشاط" });
-      }
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#043F2E]/40 p-4" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="تسجيل نشاط"
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[380px] bg-white rounded-3xl border border-[#043F2E]/10 shadow-lg p-5 flex flex-col gap-5"
-        dir="rtl"
+// Two different silences, two different sentences. A student who recorded nothing
+// at all for weeks has usually drifted away from the maqra'a; a student who simply
+// has not recited this week needs a nudge. Both are the supervisor's to act on,
+// and both stay inside recitation and reading — the rest is not their remit.
+function FollowUpBadge({ student }: { student: SupervisedStudent }) {
+  if (isLongInactive(student.last_activity_at)) {
+    const weeks = weeksSinceActivity(student.last_activity_at);
+    return (
+      <span
+        className={`${tajawal.className} inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-[#F4E0D6] text-[#9B3D2E] border border-[#9B3D2E]/25`}
+        title={
+          weeks === null
+            ? "لم يسجّل أي نشاط منذ انضمامه"
+            : `آخر نشاط قبل ${toArabicDigits(weeks)} أسبوعًا`
+        }
       >
-        {/* Header */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-[#065f46] flex items-center justify-center">
-              <Plus className="w-4 h-4 text-[#BEE663]" strokeWidth={2.4} />
-            </div>
-            <h3 className={`${lalezar.className} text-lg text-[#043F2E]`}>تسجيل نشاط</h3>
-          </div>
-          <button onClick={onClose} disabled={isPending} className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center text-[#043F2E]/60 hover:bg-[#F7FBEA] hover:text-[#043F2E] transition-colors disabled:opacity-50">
-            <X className="w-4 h-4" strokeWidth={2.2} />
-          </button>
-        </div>
+        <BellRing className="w-3 h-3 shrink-0" strokeWidth={2.4} aria-hidden="true" />
+        منقطع عن النشاط
+      </span>
+    );
+  }
 
-        {/* Student info */}
-        <div className="flex items-center gap-3 bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3">
-          <div className="w-10 h-10 shrink-0 rounded-full bg-gradient-to-br from-[#043F2E] to-[#065f46] flex items-center justify-center text-white shadow-sm">
-            <span className={`${tajawal.className} text-xs font-bold`}>{initials || <User className="w-4 h-4" strokeWidth={2.2} />}</span>
-          </div>
-          <div className="flex flex-col min-w-0">
-            <span className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate`}>{fullName}</span>
-            <span className={`${tajawal.className} text-[10px] text-[#043F2E]/50`}>@{student.username}</span>
-          </div>
-        </div>
+  if (!student.recited_this_week) {
+    return (
+      <span
+        className={`${tajawal.className} inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-[#DEFF90] text-[#043F2E] border border-[#9ADD00]/40`}
+        title="لم يسجّل تسميعًا هذا الأسبوع"
+      >
+        <BellRing className="w-3 h-3 shrink-0" strokeWidth={2.4} aria-hidden="true" />
+        يحتاج إلى متابعة
+      </span>
+    );
+  }
 
-        {/* Category selector */}
-        <div className="flex flex-col gap-2">
-          <label className={`${tajawal.className} text-xs font-bold text-[#043F2E]/70`}>نوع النشاط</label>
-          <div className="grid grid-cols-2 gap-2">
-            {availableCategories.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setCategoryId(cat.id)}
-                disabled={isPending}
-                className={`${tajawal.className} flex flex-col items-center gap-1.5 h-auto py-3 rounded-2xl border-2 text-xs font-bold transition-all ${
-                  categoryId === cat.id
-                    ? "border-[#043F2E] bg-[#043F2E] text-white"
-                    : "border-[#043F2E]/15 bg-[#F7FBEA] text-[#043F2E]/70 hover:border-[#043F2E]/40"
-                } disabled:opacity-50`}
-              >
-                {cat.id === CAT_TASMEE ? (
-                  <BookMarked className="w-4 h-4" strokeWidth={2.2} />
-                ) : (
-                  <BookOpen className="w-4 h-4" strokeWidth={2.2} />
-                )}
-                {cat.name}
-                <span className={`text-[10px] font-medium ${categoryId === cat.id ? "text-[#BEE663]" : "text-[#043F2E]/40"}`}>
-                  النقاط: +{toArabicDigits(cat.value)}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Points preview */}
-        <div className="flex items-center justify-center gap-1.5">
-          <span className={`${tajawal.className} text-[11px] text-[#043F2E]/50`}>النقاط المسجّلة:</span>
-          <span className={`${tajawal.className} text-sm font-bold text-[#043F2E] bg-[#BEE663] rounded-full px-2 py-0.5`}>
-            +{toArabicDigits(selectedCategory?.value ?? 0)}
-          </span>
-        </div>
-
-        {/* Result message */}
-        {result && (
-          <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 ${result.success ? "bg-[#DEFF90] border border-[#9ADD00]/40 text-[#043F2E]" : "bg-[#F4E0D6] border border-[#9B3D2E]/30 text-[#9B3D2E]"}`}>
-            {result.success ? <Check className="w-4 h-4 shrink-0" strokeWidth={2.5} /> : <X className="w-4 h-4 shrink-0" strokeWidth={2.5} />}
-            <span className={`${tajawal.className} text-xs`}>{result.message}</span>
-          </div>
-        )}
-
-        {/* Submit */}
-        <button onClick={handleSubmit} disabled={isPending || !selectedCategory} className={`${tajawal.className} h-12 rounded-xl bg-[#043F2E] text-white text-sm font-bold hover:bg-[#065f46] transition-colors disabled:opacity-50 flex items-center justify-center gap-2`}>
-          {isPending ? (<><Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} />جارٍ التسجيل...</>) : (<><Plus className="w-4 h-4" strokeWidth={2.4} />تسجيل النشاط</>)}
-        </button>
-      </div>
-    </div>
-  );
+  return null;
 }
 
 // ============================
