@@ -319,14 +319,15 @@ export default async function ProfilePage({
 
         {/* Stats (points always visible) */}
         <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm p-5 md:p-6">
-          <div className="grid grid-cols-2 gap-3">
+          {/* Hidden activities stay hidden — printing ٠ would claim this member did
+              nothing — so the row is laid out for however many stats survive that */}
+          <div className={visibility.showDetailedActivities ? "grid grid-cols-2 gap-3" : "grid grid-cols-1"}>
             <div className="bg-[#BEE663] rounded-2xl border border-[#043F2E]/15 px-4 py-3 flex flex-col gap-1">
               <span className={`${tajawal.className} text-[11px] font-medium text-[#043F2E]/70`}>النقاط</span>
               <span className={`${lalezar.className} text-2xl text-[#043F2E]`}>
                 {toArabicDigits(points)}
               </span>
             </div>
-            {/* Hidden activities are hidden — printing ٠ would claim this member did nothing */}
             {visibility.showDetailedActivities && (
               <div className="bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 flex flex-col gap-1">
                 <span className={`${tajawal.className} text-[11px] font-medium text-[#043F2E]/50`}>الأنشطة</span>

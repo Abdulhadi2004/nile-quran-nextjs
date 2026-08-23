@@ -21,7 +21,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import ProfileActivityList from "../ProfileActivityList";
-import { cn, toArabicDigits, getHijriMonth, formatArabicDate } from "@/lib/utils";
+import { cn, toArabicDigits, getHijriMonth, formatHijriDate } from "@/lib/utils";
 import { gregorianToHijri } from "@tabby_ai/hijri-converter";
 import type { UserActivity } from "@/lib/profile-types";
 import {
@@ -291,7 +291,7 @@ export default function StudentProfileView({
               <InfoCard
                 icon={<Calendar className="w-4 h-4" strokeWidth={2.2} />}
                 label="تاريخ الانضمام"
-                value={formatArabicDate(dateJoined)}
+                value={formatHijriDate(dateJoined)}
               />
             )}
           </div>
@@ -301,42 +301,6 @@ export default function StudentProfileView({
           </p>
         )}
       </div>
-
-      {/* Circle peers — the people you memorise alongside. Names only, on purpose:
-          a number beside each name would turn this into a small leaderboard. */}
-      {supervisorName && (
-        <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm p-5 md:p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-8 h-8 rounded-lg bg-[#F7FBEA] text-[#043F2E]/70 flex items-center justify-center shrink-0">
-              <Users className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />
-            </div>
-            <h3 className={`${lalezar.className} text-lg text-[#043F2E] leading-none`}>
-              زملاء حلقتي
-            </h3>
-          </div>
-          <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 mb-4`}>
-            في حلقة {supervisorName}
-          </p>
-
-          {peers.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {peers.map((peer) => (
-                <Link
-                  key={peer.id}
-                  href={`/profile/${peer.id}`}
-                  className={`${tajawal.className} inline-flex items-center h-9 px-3.5 rounded-xl bg-[#F7FBEA] border border-[#043F2E]/10 text-sm font-medium text-[#043F2E] hover:bg-[#BEE663]/30 hover:border-[#043F2E]/30 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2`}
-                >
-                  {peer.fullName}
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className={`${tajawal.className} text-xs text-[#043F2E]/60`}>
-              أنت أول من انضم إلى هذه الحلقة
-            </p>
-          )}
-        </div>
-      )}
 
       {/* Progress + points breakdown pie chart */}
       <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm overflow-hidden">
@@ -405,6 +369,42 @@ export default function StudentProfileView({
           }
         />
       </div>
+
+      {/* Circle peers — the people you memorise alongside. Names only, on purpose:
+          a number beside each name would turn this into a small leaderboard. */}
+      {supervisorName && (
+        <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm p-5 md:p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 rounded-lg bg-[#F7FBEA] text-[#043F2E]/70 flex items-center justify-center shrink-0">
+              <Users className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />
+            </div>
+            <h3 className={`${lalezar.className} text-lg text-[#043F2E] leading-none`}>
+              زملاء حلقتي
+            </h3>
+          </div>
+          <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 mb-4`}>
+            في حلقة {supervisorName}
+          </p>
+
+          {peers.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {peers.map((peer) => (
+                <Link
+                  key={peer.id}
+                  href={`/profile/${peer.id}`}
+                  className={`${tajawal.className} inline-flex items-center h-9 px-3.5 rounded-xl bg-[#F7FBEA] border border-[#043F2E]/10 text-sm font-medium text-[#043F2E] hover:bg-[#BEE663]/30 hover:border-[#043F2E]/30 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2`}
+                >
+                  {peer.fullName}
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className={`${tajawal.className} text-xs text-[#043F2E]/60`}>
+              أنت أول من انضم إلى هذه الحلقة
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

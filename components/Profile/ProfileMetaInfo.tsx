@@ -2,7 +2,7 @@ import { Tajawal } from "next/font/google";
 import { UserCheck, UserPlus, Calendar, Mail } from "lucide-react";
 import Link from "next/link";
 import type { ProfileVisibility } from "@/lib/profile-types";
-import { toArabicDigits } from "@/lib/utils";
+import { formatHijriDate } from "@/lib/utils";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
@@ -18,19 +18,6 @@ interface Props {
   email: string;
   dateJoined: string;
   visibility: ProfileVisibility;
-}
-
-function formatDateArabic(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    const months = [
-      "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-      "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
-    ];
-    return `${toArabicDigits(d.getDate())} ${months[d.getMonth()]} ${toArabicDigits(d.getFullYear())}`;
-  } catch {
-    return dateStr;
-  }
 }
 
 export default function ProfileMetaInfo({
@@ -71,7 +58,7 @@ export default function ProfileMetaInfo({
       show: visibility.showDateJoined,
       icon: <Calendar className="w-4 h-4" strokeWidth={2.2} />,
       label: "تاريخ الانضمام",
-      value: formatDateArabic(dateJoined),
+      value: formatHijriDate(dateJoined),
     },
   ];
 
