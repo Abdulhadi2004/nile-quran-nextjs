@@ -2,7 +2,7 @@
 
 import { Lalezar, Tajawal } from "next/font/google";
 import { Calendar, Inbox } from "lucide-react";
-import { toArabicDigits, formatArabicDate } from "@/lib/utils";
+import { toArabicDigits, formatHijriDate } from "@/lib/utils";
 
 const lalezar = Lalezar({ subsets: ["arabic"], weight: "400" });
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
@@ -23,54 +23,43 @@ interface Props {
 
 export default function ProfileActivityList({ activities, emptyMessage }: Props) {
   return (
-    <div className="flex flex-col gap-3" dir="rtl">
+    <div className="flex flex-col gap-2.5" dir="rtl">
       {activities.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <div className="w-14 h-14 rounded-2xl bg-[#F7FBEA] flex items-center justify-center mb-3">
-            <Inbox className="w-6 h-6 text-[#043F2E]/40" strokeWidth={1.8} />
+            <Inbox className="w-6 h-6 text-[#043F2E]/50" strokeWidth={1.8} aria-hidden="true" />
           </div>
-          <h3 className={`${lalezar.className} text-lg text-[#043F2E] mb-1`}>
+          <p className={`${tajawal.className} text-sm text-[#043F2E]/60`}>
             {emptyMessage || "لا توجد أنشطة"}
-          </h3>
+          </p>
         </div>
       ) : (
         activities.map((activity) => (
           <div
             key={activity.id}
-            className="flex items-center gap-3 bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 p-3.5 hover:border-[#043F2E]/20 transition-colors"
+            className="flex items-center gap-3 bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 hover:border-[#043F2E]/20 transition-colors motion-reduce:transition-none"
           >
-            {/* Category badge */}
-            <div className="shrink-0 w-10 h-10 rounded-xl bg-[#043F2E] text-[#BEE663] flex items-center justify-center">
-              <span className={`${tajawal.className} text-xs font-bold`}>
-                {toArabicDigits(activity.category)}
-              </span>
-            </div>
-
-            {/* Activity info */}
+            {/* What it was, and when. The category id used to be printed in a dark
+                chip here, which read as a quantity and told a member nothing. */}
             <div className="flex-1 min-w-0 flex flex-col gap-0.5">
               <p className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate`}>
-                {activity.category_name || `تصنيف رقم ${toArabicDigits(activity.category)}`}
+                {activity.category_name || "نشاط"}
               </p>
               <div className="flex items-center gap-1.5">
-                <Calendar className="w-3 h-3 text-[#043F2E]/40" strokeWidth={2.2} />
-                <span className={`${tajawal.className} text-xs text-[#043F2E]/50`}>
-                  {formatArabicDate(activity.date)}
+                <Calendar className="w-3 h-3 text-[#043F2E]/60" strokeWidth={2.2} aria-hidden="true" />
+                <span className={`${tajawal.className} text-[11px] text-[#043F2E]/60`}>
+                  {formatHijriDate(activity.date)}
+                  {activity.multiplier > 1 && ` · ${toArabicDigits(activity.multiplier)} مرات`}
                 </span>
               </div>
             </div>
 
-            {/* Multiplier */}
-            {activity.multiplier > 1 && (
-              <span className={`${tajawal.className} shrink-0 text-[11px] font-bold text-[#043F2E] bg-[#BEE663] rounded-full px-2 py-0.5`}>
-                ×{toArabicDigits(activity.multiplier)}
-              </span>
-            )}
-
-            {/* Points */}
+            {/* A plain figure, not a lime pill: this list sits under a card that
+                already owns the screen's one emphasis surface. */}
             {activity.points !== undefined && (
-              <div className={`${tajawal.className} shrink-0 min-w-[48px] h-9 px-3 flex items-center justify-center rounded-xl font-bold text-sm bg-[#BEE663] text-[#043F2E]`}>
+              <span className={`${lalezar.className} shrink-0 text-lg text-[#043F2E] leading-none`}>
                 +{toArabicDigits(activity.points)}
-              </div>
+              </span>
             )}
           </div>
         ))

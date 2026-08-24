@@ -10,41 +10,27 @@ interface Props {
   size?: "sm" | "md" | "lg";
 }
 
-const roleConfig: Record<
-  RoleType,
-  { bg: string; text: string; icon: React.ReactNode }
-> = {
-  Admin: {
-    bg: "bg-[#043F2E]",
-    text: "text-[#BEE663]",
-    icon: <Crown className="w-3.5 h-3.5" strokeWidth={2.4} />,
-  },
-  Supervisor: {
-    bg: "bg-[#065f46]",
-    text: "text-[#DEFF90]",
-    icon: <Shield className="w-3.5 h-3.5" strokeWidth={2.4} />,
-  },
-  Student: {
-    bg: "bg-[#F7FBEA]",
-    text: "text-[#043F2E]",
-    icon: <BookOpen className="w-3.5 h-3.5" strokeWidth={2.4} />,
-  },
+// One quiet treatment for all three roles. Filled pills in three different
+// greens turned the row under the name into a strip of competing colour; a role
+// is a label, not a status worth shouting, so it reads as text with a mark.
+const roleConfig: Record<RoleType, { icon: React.ReactNode }> = {
+  Admin: { icon: <Crown className="w-3.5 h-3.5" strokeWidth={2.4} /> },
+  Supervisor: { icon: <Shield className="w-3.5 h-3.5" strokeWidth={2.4} /> },
+  Student: { icon: <BookOpen className="w-3.5 h-3.5" strokeWidth={2.4} /> },
 };
 
 export default function RoleBadge({ role, size = "md" }: Props) {
   const cfg = roleConfig[role];
   const sizeClass =
-    size === "sm"
-      ? "px-2 py-0.5 text-[10px] gap-1"
-      : size === "lg"
-        ? "px-4 py-1.5 text-sm gap-2"
-        : "px-3 py-1 text-xs gap-1.5";
+    size === "sm" ? "text-[11px] gap-1" : size === "lg" ? "text-sm gap-2" : "text-xs gap-1.5";
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border border-[#043F2E]/15 font-bold ${cfg.bg} ${cfg.text} ${sizeClass} ${tajawal.className}`}
+      className={`inline-flex items-center text-[#043F2E]/70 font-medium ${sizeClass} ${tajawal.className}`}
     >
-      {cfg.icon}
+      <span className="text-[#043F2E]/50" aria-hidden="true">
+        {cfg.icon}
+      </span>
       {getRoleLabel(role)}
     </span>
   );

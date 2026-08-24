@@ -22,6 +22,9 @@ interface Props {
   action?: React.ReactNode;
 }
 
+// The page's title block, not another card in the stack: it sits directly on the
+// page background so the white cards below start the content, and the member's
+// name is the first thing the eye lands on.
 export default function ProfileHeader({
   firstName,
   lastName,
@@ -35,44 +38,59 @@ export default function ProfileHeader({
   const roles = getRoles(groups);
 
   return (
-    <div className="flex items-center gap-4 flex-wrap" dir="rtl">
-      {/* Avatar — circular */}
-      <div className="shrink-0 w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-[#043F2E] to-[#065f46] flex items-center justify-center text-white shadow-md ring-2 ring-white">
-        <span className={`${tajawal.className} text-xl md:text-2xl font-bold`}>
-          {initials || <User className="w-6 h-6" strokeWidth={2.2} />}
-        </span>
-      </div>
+    <header className="flex flex-col gap-4" dir="rtl">
+      <div className="flex flex-wrap items-center gap-4">
+        {/* Avatar */}
+        {/* The same green the control board wears, so the profile and the board
+            read as one product rather than two palettes. */}
+        <div className="shrink-0 w-16 h-16 md:w-[72px] md:h-[72px] rounded-full bg-[#043F2E] flex items-center justify-center text-[#BEE663]">
+          {initials ? (
+            <span className={`${tajawal.className} text-xl md:text-2xl font-bold`}>
+              {initials}
+            </span>
+          ) : (
+            <User className="w-7 h-7" strokeWidth={2.2} />
+          )}
+        </div>
 
-      {/* Name + Username + Supervisor */}
-      <div className="flex flex-col gap-1 min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h1 className={`${lalezar.className} text-2xl md:text-3xl text-[#043F2E] leading-tight`}>
+        {/* Name, then who they are — the roles sit on the same line as the
+            username rather than in a strip of their own below the block */}
+        <div className="flex-1 min-w-[9rem] flex flex-col gap-1">
+          <h1
+            className={`${lalezar.className} text-2xl md:text-4xl text-[#043F2E] leading-tight break-words`}
+          >
             {fullName || username}
           </h1>
-          {roles.map((r) => (
-            <RoleBadge key={r} role={r} />
-          ))}
-        </div>
-        <p className={`${tajawal.className} text-sm text-[#043F2E]/50 font-medium`}>
-          @{username}
-        </p>
-
-        {/* Supervisor link — name only, clickable */}
-        {supervisor && (
-          <Link
-            href={`/profile/${supervisor.id}`}
-            className="inline-flex items-center gap-1.5 mt-1 group"
-          >
-            <UserCheck className="w-3.5 h-3.5 text-[#043F2E]/50 group-hover:text-[#043F2E]" strokeWidth={2.2} />
-            <span className={`${tajawal.className} text-xs font-bold text-[#043F2E]/60 group-hover:text-[#043F2E] group-hover:underline`}>
-              {supervisor.fullName}
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <span className={`${tajawal.className} text-sm text-[#043F2E]/60 font-medium`}>
+              @{username}
             </span>
-          </Link>
-        )}
+            {roles.map((r) => (
+              <RoleBadge key={r} role={r} size="sm" />
+            ))}
+          </div>
+        </div>
+
+        {/* Optional action (e.g. edit own data) — `ms-auto` keeps it pinned to the
+            end of the row, including on the line it wraps onto at narrow widths */}
+        {action && <div className="shrink-0 ms-auto">{action}</div>}
       </div>
 
-      {/* Optional action (e.g. edit own data) */}
-      {action && <div className="shrink-0">{action}</div>}
-    </div>
+      {/* The supervisor is a fact about this member, not a control: a plain line
+          with a link on the name, rather than another bordered pill. */}
+      {supervisor && (
+        <p className={`${tajawal.className} flex items-center gap-1.5 text-sm text-[#043F2E]/60`}>
+          <UserCheck className="w-4 h-4 shrink-0 text-[#043F2E]/50" strokeWidth={2.2} aria-hidden="true" />
+          المشرف
+          <Link
+            href={`/profile/${encodeURIComponent(supervisor.username)}`}
+            className={`font-bold text-[#043F2E] hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2`}
+          >
+            {supervisor.fullName}
+          </Link>
+        </p>
+      )}
+
+    </header>
   );
 }

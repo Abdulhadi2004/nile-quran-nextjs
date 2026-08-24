@@ -4,14 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Lalezar, Tajawal } from "next/font/google";
 import {
   Sparkles,
-  Target,
   Trophy,
   Activity,
-  BookOpen,
   Award,
   UserCheck,
-  UserPlus,
-  Calendar,
   CalendarRange,
   ChevronLeft,
   ChevronRight,
@@ -21,7 +17,9 @@ import {
   AlertCircle,
 } from "lucide-react";
 import ProfileActivityList from "../ProfileActivityList";
-import { cn, toArabicDigits, getHijriMonth, formatHijriDate } from "@/lib/utils";
+import SectionHeading from "../SectionHeading";
+import StatTile from "../StatTile";
+import { cn, toArabicDigits, getHijriMonth } from "@/lib/utils";
 import { gregorianToHijri } from "@tabby_ai/hijri-converter";
 import type { UserActivity } from "@/lib/profile-types";
 import {
@@ -33,6 +31,15 @@ import Link from "next/link";
 
 const lalezar = Lalezar({ subsets: ["arabic"], weight: "400" });
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
+
+// One surface / spacing system for every block on this dashboard. The page used
+// to be six or seven cards each inventing its own padding, radius and header,
+// so nothing read as more important than anything else. Now: identical shells,
+// identical headers, and a single dark tile carrying the one number that matters.
+const CARD = "bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm p-5 md:p-6";
+const RULE = "h-px bg-[#043F2E]/8";
+const FOCUS_RING =
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2";
 
 interface Category {
   id: number;
@@ -50,10 +57,7 @@ interface Props {
   categories: Category[];
   peers: CirclePeer[];
   supervisorName?: string;
-  supervisorId?: number | null;
-  referrerName?: string;
-  referrerId?: number | null;
-  dateJoined?: string;
+  supervisorHandle?: string | null;
 }
 
 // Brand palette for pie slices (approved tokens only)
@@ -69,10 +73,7 @@ export default function StudentProfileView({
   categories,
   peers,
   supervisorName,
-  supervisorId,
-  referrerName,
-  referrerId,
-  dateJoined,
+  supervisorHandle,
 }: Props) {
   const now = new Date();
   const hijriToday = gregorianToHijri({
@@ -162,174 +163,108 @@ export default function StudentProfileView({
     color: PIE_COLORS[i % PIE_COLORS.length],
   }));
 
-  const hasInfo = Boolean(supervisorName || referrerName || dateJoined);
 
   return (
-    <div className="flex flex-col gap-6" dir="rtl">
-      {/* Month navigator — everything below it belongs to the month it names */}
-      <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm px-4 py-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-[#F7FBEA] text-[#043F2E] flex items-center justify-center shrink-0">
-            <CalendarRange className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />
-          </div>
-          <div className="min-w-0">
-            <p className={`${lalezar.className} text-lg text-[#043F2E] leading-tight truncate`}>
-              {monthLabel} هـ
-            </p>
-            <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60`}>
-              {isCurrentMonth ? "الشهر الحالي" : "شهر سابق"}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5 bg-[#F7FBEA] border border-[#043F2E]/15 rounded-2xl p-1.5 shrink-0">
-          <button
-            onClick={goPrev}
-            disabled={loading}
-            aria-label="الشهر السابق"
-            className="w-10 h-10 rounded-xl bg-white hover:bg-[#BEE663] text-[#043F2E] flex items-center justify-center transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <ChevronRight className="w-5 h-5" strokeWidth={2.4} aria-hidden="true" />
-          </button>
-          <button
-            onClick={goNext}
-            disabled={loading || isCurrentMonth}
-            aria-label="الشهر التالي"
-            className="w-10 h-10 rounded-xl bg-white hover:bg-[#BEE663] text-[#043F2E] flex items-center justify-center transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <ChevronLeft className="w-5 h-5" strokeWidth={2.4} aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-
-      {loadError && (
-        <div
-          role="alert"
-          className="flex items-center gap-2 rounded-2xl bg-[#F4E0D6] border border-[#9B3D2E]/30 px-4 py-3"
-        >
-          <AlertCircle className="w-4 h-4 text-[#9B3D2E] shrink-0" strokeWidth={2.2} />
-          <span className={`${tajawal.className} text-xs text-[#9B3D2E]`}>{loadError}</span>
-        </div>
-      )}
-
-      {/* Hero stats banner — all three now describe the selected month */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <HeroStat
-          label="نقاط الشهر"
-          value={toArabicDigits(points)}
-          icon={<Trophy className="w-5 h-5" strokeWidth={2.2} />}
-          accent
-          loading={loading}
-        />
-        <HeroStat
-          label="أنشطة الشهر"
-          value={toArabicDigits(activities.length)}
-          icon={<Activity className="w-5 h-5" strokeWidth={2.2} />}
-          loading={loading}
-        />
-        <HeroStat
-          label="ترتيبي في الشهر"
-          value={rank ? toArabicDigits(rank) : "—"}
-          icon={<Award className="w-5 h-5" strokeWidth={2.2} />}
-          loading={loading}
-        />
-      </div>
-
-      {/* Info section — supervisor, referrer, date joined */}
-      <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm p-5 md:p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-8 h-8 rounded-lg bg-[#F7FBEA] text-[#043F2E]/70 flex items-center justify-center shrink-0">
-            <Info className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />
-          </div>
-          <h3 className={`${lalezar.className} text-lg text-[#043F2E] leading-none`}>معلومات</h3>
-        </div>
-        {hasInfo ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {supervisorName && (
-              supervisorId ? (
-                <Link
-                  href={`/profile/${supervisorId}`}
-                  className="block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2"
-                >
-                  <InfoCard
-                    icon={<UserCheck className="w-4 h-4" strokeWidth={2.2} />}
-                    label="المشرف"
-                    value={supervisorName}
-                    clickable
-                  />
-                </Link>
-              ) : (
-                <InfoCard
-                  icon={<UserCheck className="w-4 h-4" strokeWidth={2.2} />}
-                  label="المشرف"
-                  value={supervisorName}
-                />
-              )
-            )}
-            {referrerName && (
-              referrerId ? (
-                <Link
-                  href={`/profile/${referrerId}`}
-                  className="block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2"
-                >
-                  <InfoCard
-                    icon={<UserPlus className="w-4 h-4" strokeWidth={2.2} />}
-                    label="بدعوة من"
-                    value={referrerName}
-                    clickable
-                  />
-                </Link>
-              ) : (
-                <InfoCard
-                  icon={<UserPlus className="w-4 h-4" strokeWidth={2.2} />}
-                  label="بدعوة من"
-                  value={referrerName}
-                />
-              )
-            )}
-            {dateJoined && (
-              <InfoCard
-                icon={<Calendar className="w-4 h-4" strokeWidth={2.2} />}
-                label="تاريخ الانضمام"
-                value={formatHijriDate(dateJoined)}
-              />
-            )}
-          </div>
-        ) : (
-          <p className={`${tajawal.className} text-xs text-[#043F2E]/50`}>
-            لا توجد معلومات إضافية بعد
-          </p>
-        )}
-      </div>
-
-      {/* Progress + points breakdown pie chart */}
-      <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm overflow-hidden">
-        <div className="bg-gradient-to-l from-[#043F2E] to-[#065f46] px-5 py-4 flex items-center justify-between gap-3">
+    <div className="flex flex-col gap-5 md:gap-6" dir="rtl">
+      {/* Standing facts, not month figures — so they close the page instead of
+          interrupting the month's own story */}
+      {/* ─────────────────────────────────────────────────────────────────
+          The month. One card, one statement of the month, and everything
+          that belongs to it: the navigator, the three figures, and the
+          breakdown of those same points. The navigator used to be its own
+          card sitting directly above a card whose header repeated the month.
+          ───────────────────────────────────────────────────────────────── */}
+      <section
+        aria-labelledby="student-month-heading"
+        className={cn(CARD, "flex flex-col gap-5")}
+      >
+        <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-[#BEE663] flex items-center justify-center shrink-0">
-              <Target className="w-4 h-4 text-[#043F2E]" strokeWidth={2.4} aria-hidden="true" />
-            </div>
+            <span
+              className="w-8 h-8 rounded-lg bg-[#F7FBEA] text-[#043F2E] flex items-center justify-center shrink-0"
+              aria-hidden="true"
+            >
+              <CalendarRange className="w-4 h-4" strokeWidth={2.2} />
+            </span>
             <div className="min-w-0">
-              <h3 className={`${lalezar.className} text-lg text-white leading-tight truncate`}>
-                {isCurrentMonth ? "تقدمي هذا الشهر" : "تقدمي في ذلك الشهر"}
-              </h3>
-              <p className={`${tajawal.className} text-[11px] text-[#BEE663]/80 truncate`}>
+              <h3
+                id="student-month-heading"
+                className={`${lalezar.className} text-lg text-[#043F2E] leading-tight truncate`}
+              >
                 {monthLabel} هـ
+              </h3>
+              <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 leading-tight`}>
+                {isCurrentMonth ? "الشهر الحالي" : "شهر سابق"}
               </p>
             </div>
           </div>
-          <div className="text-left shrink-0">
-            <span className={`${lalezar.className} text-3xl text-[#BEE663]`}>
-              {toArabicDigits(points)}
-            </span>
-            <span className={`${tajawal.className} text-xs text-white/60 mr-1`}>نقطة</span>
+
+          {/* Prev is always available; next stops at the current month.
+              RTL: ChevronRight goes back, ChevronLeft goes forward. */}
+          <div className="flex items-center gap-2 shrink-0">
+            <MonthNavButton
+              onClick={goPrev}
+              disabled={loading}
+              label="الشهر السابق"
+              icon={<ChevronRight className="w-5 h-5" strokeWidth={2.4} />}
+            />
+            <MonthNavButton
+              onClick={goNext}
+              disabled={loading || isCurrentMonth}
+              label="الشهر التالي"
+              icon={<ChevronLeft className="w-5 h-5" strokeWidth={2.4} />}
+            />
           </div>
         </div>
 
-        {/* Points breakdown — pie chart */}
-        <div className="p-5 flex flex-col gap-4">
+        <div className={RULE} />
+
+        {loadError && (
+          <div
+            role="alert"
+            className="flex items-center gap-2 rounded-2xl bg-[#F4E0D6] border border-[#9B3D2E]/30 px-4 py-3"
+          >
+            <AlertCircle className="w-4 h-4 text-[#9B3D2E] shrink-0" strokeWidth={2.2} aria-hidden="true" />
+            <span className={`${tajawal.className} text-xs text-[#9B3D2E]`}>{loadError}</span>
+          </div>
+        )}
+
+        {/* The member's own points are the one thing on this screen allowed a
+            dark surface. The gradient band that used to shout above the chart
+            is gone; this tile carries that weight now, next to its own month. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" aria-busy={loading || undefined}>
+          {loading && (
+            <span role="status" className="sr-only">
+              جارٍ تحميل أرقام الشهر
+            </span>
+          )}
+          <StatTile
+            label="نقاط الشهر"
+            value={toArabicDigits(points)}
+            icon={<Trophy className="w-5 h-5" strokeWidth={2.2} />}
+            tone="primary"
+            loading={loading}
+          />
+          <StatTile
+            label="أنشطة الشهر"
+            value={toArabicDigits(activities.length)}
+            icon={<Activity className="w-5 h-5" strokeWidth={2.2} />}
+            loading={loading}
+          />
+          <StatTile
+            label="ترتيبي في الشهر"
+            value={rank ? toArabicDigits(rank) : "—"}
+            icon={<Award className="w-5 h-5" strokeWidth={2.2} />}
+            loading={loading}
+          />
+        </div>
+
+        <div className={RULE} />
+
+        {/* Where those points came from — same month, same card, no second header */}
+        <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-[#043F2E]/60" strokeWidth={2.2} aria-hidden="true" />
+            <PieChart className="w-4 h-4 text-[#043F2E]/60 shrink-0" strokeWidth={2.2} aria-hidden="true" />
             <h4 className={`${tajawal.className} text-sm font-bold text-[#043F2E]`}>توزيع النقاط</h4>
           </div>
           {pieSlices.length > 0 ? (
@@ -337,9 +272,9 @@ export default function StudentProfileView({
           ) : (
             <div className="flex flex-col items-center justify-center text-center py-6 gap-2">
               <div className="w-12 h-12 rounded-2xl bg-[#F7FBEA] flex items-center justify-center">
-                <PieChart className="w-5 h-5 text-[#043F2E]/40" strokeWidth={1.8} aria-hidden="true" />
+                <PieChart className="w-5 h-5 text-[#043F2E]/60" strokeWidth={1.8} aria-hidden="true" />
               </div>
-              <p className={`${tajawal.className} text-xs text-[#043F2E]/50`}>
+              <p className={`${tajawal.className} text-xs text-[#043F2E]/60`}>
                 {isCurrentMonth
                   ? "سيظهر توزيع نقاطك هنا بعد تسجيل أول نشاط"
                   : "لا توجد أنشطة مسجّلة في هذا الشهر"}
@@ -347,52 +282,53 @@ export default function StudentProfileView({
             </div>
           )}
         </div>
-      </div>
+      </section>
 
-      {/* Recent activities */}
-      <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm p-5 md:p-6 flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-[#BEE663] text-[#043F2E] flex items-center justify-center shrink-0">
-              <Sparkles className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />
-            </div>
-            <h3 className={`${lalezar.className} text-lg text-[#043F2E] truncate`}>آخر الأنشطة</h3>
-          </div>
-          <span className={`${tajawal.className} text-xs text-[#043F2E]/40 shrink-0`}>
-            {toArabicDigits(recentActivities.length)} من {toArabicDigits(activities.length)}
-          </span>
-        </div>
+      {/* Recent activities — still the selected month's, so it sits directly
+          under the card that names it */}
+      <section aria-labelledby="student-activities-heading" className={cn(CARD, "flex flex-col gap-4")}>
+        <SectionHeading
+          id="student-activities-heading"
+          icon={<Sparkles className="w-4 h-4" strokeWidth={2.2} />}
+          title="آخر الأنشطة"
+          sub={
+            activities.length > 0
+              ? `عرض ${toArabicDigits(recentActivities.length)} من ${toArabicDigits(activities.length)}`
+              : undefined
+          }
+        />
         <ProfileActivityList
           activities={recentActivities}
           emptyMessage={
             isCurrentMonth ? "لم تسجّل أي نشاط هذا الشهر بعد" : "لا توجد أنشطة في هذا الشهر"
           }
         />
-      </div>
+      </section>
 
       {/* Circle peers — the people you memorise alongside. Names only, on purpose:
           a number beside each name would turn this into a small leaderboard. */}
       {supervisorName && (
-        <div className="bg-white rounded-3xl border border-[#043F2E]/10 shadow-sm p-5 md:p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-8 h-8 rounded-lg bg-[#F7FBEA] text-[#043F2E]/70 flex items-center justify-center shrink-0">
-              <Users className="w-4 h-4" strokeWidth={2.2} aria-hidden="true" />
-            </div>
-            <h3 className={`${lalezar.className} text-lg text-[#043F2E] leading-none`}>
-              زملاء حلقتي
-            </h3>
-          </div>
-          <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 mb-4`}>
-            في حلقة {supervisorName}
-          </p>
+        <section aria-labelledby="student-peers-heading" className={cn(CARD, "flex flex-col gap-4")}>
+          <SectionHeading
+            id="student-peers-heading"
+            icon={<Users className="w-4 h-4" strokeWidth={2.2} />}
+            title="زملاء حلقتي"
+            sub={`في حلقة ${supervisorName}`}
+          />
 
           {peers.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {peers.map((peer) => (
                 <Link
                   key={peer.id}
-                  href={`/profile/${peer.id}`}
-                  className={`${tajawal.className} inline-flex items-center h-9 px-3.5 rounded-xl bg-[#F7FBEA] border border-[#043F2E]/10 text-sm font-medium text-[#043F2E] hover:bg-[#BEE663]/30 hover:border-[#043F2E]/30 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2`}
+                  href={`/profile/${encodeURIComponent(peer.username)}`}
+                  className={cn(
+                    tajawal.className,
+                    "inline-flex items-center h-11 sm:h-10 px-4 rounded-xl bg-[#F7FBEA] border border-[#043F2E]/10",
+                    "text-sm font-medium text-[#043F2E] transition-colors",
+                    "hover:bg-[#BEE663]/30 hover:border-[#043F2E]/30",
+                    FOCUS_RING,
+                  )}
                 >
                   {peer.fullName}
                 </Link>
@@ -403,9 +339,43 @@ export default function StudentProfileView({
               أنت أول من انضم إلى هذه الحلقة
             </p>
           )}
-        </div>
+        </section>
       )}
+
     </div>
+  );
+}
+
+// ============================
+// Month navigation button — 44px on touch, 40px from sm up, always labelled
+// ============================
+function MonthNavButton({
+  onClick,
+  disabled,
+  label,
+  icon,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  label: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className={cn(
+        "w-11 h-11 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0",
+        "bg-[#F7FBEA] border border-[#043F2E]/10 text-[#043F2E] transition-colors",
+        "hover:bg-[#BEE663] hover:border-[#043F2E]/20",
+        "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#F7FBEA] disabled:hover:border-[#043F2E]/10",
+        FOCUS_RING,
+      )}
+    >
+      <span aria-hidden="true">{icon}</span>
+    </button>
   );
 }
 
@@ -424,7 +394,8 @@ interface PieSlice {
 const CX = 100;
 const CY = 100;
 const R_OUT = 80; // visible outer radius
-const R_IN = 54; // visible inner radius (the hole)
+const R_IN = 58; // visible inner radius (the hole) — a thinner ring reads calmer
+// and leaves room for the centre readout at a legible size
 const R_HIT_OUT = 92; // invisible hit area — widens the tap target to ~44px on mobile
 const R_HIT_IN = 50;
 const R_MARKER = 87; // thin arc drawn outside a highlighted slice
@@ -544,7 +515,7 @@ function PointsPieChart({ slices, totalPoints }: { slices: PieSlice[]; totalPoin
         >
           <path d={ringPath(R_OUT, R_IN)} fillRule="evenodd" fill="#043F2E" fillOpacity={0.08} />
         </svg>
-        <p className={`${tajawal.className} text-xs text-[#043F2E]/50 text-center sm:text-start`}>
+        <p className={`${tajawal.className} text-xs text-[#043F2E]/60 text-center sm:text-start`}>
           لا توجد نقاط مسجّلة بعد — سجّل نشاطك الأول ليظهر توزيع نقاطك هنا
         </p>
       </div>
@@ -589,7 +560,7 @@ function PointsPieChart({ slices, totalPoints }: { slices: PieSlice[]; totalPoin
         <div className="relative shrink-0">
           <svg
             viewBox="0 0 200 200"
-            className="w-[208px] h-[208px] sm:w-[224px] sm:h-[224px] overflow-visible"
+            className="w-[224px] h-[224px] sm:w-[240px] sm:h-[240px] overflow-visible"
             role="group"
             aria-label="توزيع النقاط حسب النشاط"
           >
@@ -686,36 +657,33 @@ function PointsPieChart({ slices, totalPoints }: { slices: PieSlice[]; totalPoin
               role="status"
               aria-live="polite"
               aria-atomic="true"
-              className="flex flex-col items-center justify-center text-center max-w-[52%]"
+              className="flex flex-col items-center justify-center text-center max-w-[56%]"
             >
               {highlighted ? (
                 <>
                   <span
-                    className="w-2.5 h-2.5 rounded-full mb-1 shrink-0"
+                    className="w-2.5 h-2.5 rounded-full mb-1.5 shrink-0"
                     style={{ backgroundColor: highlighted.color }}
                   />
                   <span
-                    className={`${tajawal.className} text-[10px] font-bold text-[#043F2E]/70 leading-tight line-clamp-2`}
+                    className={`${tajawal.className} text-[11px] font-bold text-[#043F2E]/70 leading-snug line-clamp-2`}
                   >
                     {highlighted.name}
                   </span>
-                  <span className={`${lalezar.className} text-[22px] text-[#043F2E] leading-none mt-1`}>
+                  <span className={`${lalezar.className} text-2xl text-[#043F2E] leading-none mt-1`}>
                     +{toArabicDigits(highlighted.points)}
                   </span>
-                  <span className={`${tajawal.className} text-[9px] text-[#043F2E]/50 mt-0.5`}>
+                  <span className={`${tajawal.className} text-[11px] text-[#043F2E]/60 mt-1`}>
                     نقطة · {toArabicDigits(percentOf(highlighted.points))}٪
                   </span>
                 </>
               ) : (
                 <>
-                  <span className={`${lalezar.className} text-[28px] text-[#043F2E] leading-none`}>
+                  <span className={`${lalezar.className} text-[26px] text-[#043F2E] leading-none`}>
                     {toArabicDigits(totalPoints)}
                   </span>
-                  <span className={`${tajawal.className} text-[10px] text-[#043F2E]/50 mt-0.5`}>
-                    نقطة
-                  </span>
-                  <span className={`${tajawal.className} text-[9px] text-[#043F2E]/40 mt-1`}>
-                    الإجمالي
+                  <span className={`${tajawal.className} text-[11px] text-[#043F2E]/60 mt-1`}>
+                    إجمالي النقاط
                   </span>
                 </>
               )}
@@ -746,20 +714,20 @@ function PointsPieChart({ slices, totalPoints }: { slices: PieSlice[]; totalPoin
                   <span
                     className={cn(
                       tajawal.className,
-                      "text-xs font-medium truncate",
-                      isHighlighted ? "text-[#043F2E] font-bold" : "text-[#043F2E]/70",
+                      "text-xs truncate",
+                      isHighlighted ? "font-bold text-[#043F2E]" : "font-medium text-[#043F2E]/70",
                     )}
                   >
                     {s.name}
                   </span>
                 </span>
-                <span className="flex items-center gap-2 shrink-0">
-                  <span className={`${tajawal.className} text-[10px] text-[#043F2E]/50`}>
+                <span className="flex items-baseline gap-2 shrink-0">
+                  <span className={`${tajawal.className} text-[11px] text-[#043F2E]/60`}>
                     {toArabicDigits(percent)}٪
                   </span>
-                  <span
-                    className={`${tajawal.className} text-xs font-bold text-[#043F2E] bg-[#BEE663] rounded-full px-2 py-0.5`}
-                  >
+                  {/* Plain figure, not a lime pill: the dark points tile above is
+                      the only emphasis surface this screen gets */}
+                  <span className={`${lalezar.className} text-base text-[#043F2E] leading-none`}>
                     +{toArabicDigits(s.points)}
                   </span>
                 </span>
@@ -771,11 +739,12 @@ function PointsPieChart({ slices, totalPoints }: { slices: PieSlice[]; totalPoin
 
             if (!interactive) {
               // A category with no points has no slice to highlight — keep the
-              // row visible but inert.
+              // row visible but inert. Muted by colour rather than opacity so
+              // the label stays readable.
               return (
                 <div
                   key={s.id}
-                  className={cn(base, "bg-[#F7FBEA] border-[#043F2E]/8 opacity-60")}
+                  className={cn(base, "bg-[#F7FBEA] border-[#043F2E]/8")}
                 >
                   {body}
                 </div>
@@ -796,14 +765,17 @@ function PointsPieChart({ slices, totalPoints }: { slices: PieSlice[]; totalPoin
                 onBlur={() => previewOff(s.id)}
                 className={cn(
                   base,
-                  "cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2",
+                  "cursor-pointer",
+                  FOCUS_RING,
                   reduceMotion ? "" : "transition-all duration-200",
                   isSelected
                     ? "bg-white border-[#043F2E]/40 shadow-sm"
                     : isHighlighted
                       ? "bg-white border-[#043F2E]/25 shadow-sm"
                       : "bg-[#F7FBEA] border-[#043F2E]/8 hover:border-[#043F2E]/20",
-                  isDimmed ? "opacity-55" : "opacity-100",
+                  // The un-picked rows recede while one is picked, then come
+                  // straight back — a transient state, not resting typography
+                  isDimmed ? "opacity-70" : "opacity-100",
                 )}
               >
                 {body}
@@ -814,7 +786,7 @@ function PointsPieChart({ slices, totalPoints }: { slices: PieSlice[]; totalPoin
       </div>
 
       {/* Affordance hint */}
-      <p className={`${tajawal.className} text-[11px] text-[#043F2E]/40 text-center sm:text-start`}>
+      <p className={`${tajawal.className} text-[11px] text-[#043F2E]/60 text-center sm:text-start`}>
         {selectedId !== null
           ? "اضغط مرة أخرى — أو في أي مكان آخر — للعودة إلى الإجمالي"
           : "اضغط على أي شريحة أو نشاط لعرض تفاصيل نقاطه"}
@@ -823,80 +795,3 @@ function PointsPieChart({ slices, totalPoints }: { slices: PieSlice[]; totalPoin
   );
 }
 
-// ============================
-// Hero Stat Card
-// ============================
-function HeroStat({
-  label,
-  value,
-  icon,
-  accent,
-  loading,
-}: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  accent?: boolean;
-  loading?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-2xl px-4 py-4 border flex items-center gap-3 transition-colors ${
-        accent
-          ? "bg-[#043F2E] text-[#BEE663] border-[#043F2E]/15"
-          : "bg-white text-[#043F2E] border-[#043F2E]/10 shadow-sm hover:border-[#043F2E]/20"
-      }`}
-    >
-      <div
-        className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
-          accent ? "bg-white/10" : "bg-[#F7FBEA]"
-        }`}
-        aria-hidden="true"
-      >
-        {icon}
-      </div>
-      <div className="flex flex-col min-w-0">
-        <span className={`${tajawal.className} text-[11px] font-medium opacity-70`}>{label}</span>
-        {loading ? (
-          <span className="mt-1 h-6 w-10 rounded-md bg-current/20 animate-pulse" aria-hidden="true" />
-        ) : (
-          <span className={`${lalezar.className} text-2xl leading-tight`}>{value}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ============================
-// Info Card (supervisor / referrer / date)
-// ============================
-function InfoCard({
-  icon,
-  label,
-  value,
-  clickable,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  clickable?: boolean;
-}) {
-  return (
-    <div
-      className={`bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 flex items-center gap-3 h-full transition-colors ${
-        clickable ? "hover:border-[#043F2E]/30 hover:bg-white cursor-pointer" : ""
-      }`}
-    >
-      <div
-        className="w-9 h-9 rounded-lg bg-[#043F2E]/5 flex items-center justify-center shrink-0 text-[#043F2E]/70"
-        aria-hidden="true"
-      >
-        {icon}
-      </div>
-      <div className="flex flex-col min-w-0">
-        <span className={`${tajawal.className} text-[11px] font-medium text-[#043F2E]/50`}>{label}</span>
-        <span className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate ${clickable ? "hover:underline" : ""}`}>{value}</span>
-      </div>
-    </div>
-  );
-}

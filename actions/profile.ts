@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { unstable_cache } from "next/cache";
 import { gregorianToHijri, hijriToGregorian } from "@tabby_ai/hijri-converter";
 import { getHijriMonthDays } from "@/lib/utils";
-import { SUPERVISOR_MANAGED_CATEGORY_IDS, CAT_RECITATION } from "@/lib/profile-types";
+import { SUPERVISOR_MANAGED_CATEGORY_IDS } from "@/lib/profile-types";
 
 const API_BASE = process.env.BASE_URL;
 
@@ -12,7 +12,18 @@ function toIsoDate(d: { year: number; month: number; day: number }): string {
   return `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`;
 }
 
-// Current Hijri week range (same bucketing as the control board)
+// The last seven days, ending today. The control board buckets by Hijri week for
+// its own grid, but a follow-up signal must not reset the whole circle to
+// "has not recited" on the first of each month.
+function getLastSevenDays(): { start: string; end: string } {
+  const today = new Date();
+  const weekAgo = new Date(today.getTime() - 6 * 86_400_000);
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return { start: iso(weekAgo), end: iso(today) };
+}
+
+// Kept for the parts of the profile that mirror the control board's own weeks
 function getCurrentHijriWeekRange(): { start: string; end: string } {
   const now = new Date();
   const hijri = gregorianToHijri({
@@ -227,6 +238,7 @@ export async function getUserPointsForMonth(
 
 export interface CirclePeer {
   id: number;
+  username: string;
   fullName: string;
 }
 
@@ -248,6 +260,7 @@ export async function getCirclePeers(
       .filter((u) => u.id !== excludeUserId)
       .map((u) => ({
         id: u.id,
+        username: u.username,
         fullName: `${u.first_name} ${u.last_name}`.trim() || u.username,
       }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName, "ar"));
@@ -323,6 +336,76 @@ function latestActivityDate(activities?: ApiActivity[]): string | null {
 }
 
 // ===============================
+// Quiet Members (Admin only)
+// ===============================
+// Every student, with how long they have been silent. An administrator is the one
+// who can pick up a phone, so this is the list that lets them notice a member
+// slipping away before the term ends.
+//
+// Note: /users/points/ is capped at one page of 50 by the API, so a community past
+// that size will need the endpoint paginated before this list can be complete.
+
+export interface QuietMember {
+  id: number;
+  username: string;
+  fullName: string;
+  supervisorName: string | null;
+  dateJoined: string;
+  lastActivityAt: string | null;
+  weeksSilent: number | null;
+}
+
+export async function getQuietMembers(): Promise<FetchResult<QuietMember[]>> {
+  try {
+    const token = await getToken();
+    if (!token) throw new Error("No access token");
+
+    // One pass over the whole roster: it yields the students and, from the same
+    // rows, the names behind the supervisor usernames the API stores.
+    const [usersRes, pointsRes] = await Promise.all([
+      fetchJson<{ results: ApiUser[] }>(`${API_BASE}api/v1/users/`, token),
+      fetchJson<{ results: ApiPoints[] } | ApiPoints[]>(`${API_BASE}api/v1/users/points/`, token),
+    ]);
+
+    const everyone = usersRes.results || [];
+    const points = Array.isArray(pointsRes) ? pointsRes : (pointsRes.results ?? []);
+    const nameOf = new Map(
+      everyone.map((u) => [u.username, `${u.first_name} ${u.last_name}`.trim() || u.username]),
+    );
+
+    const members: QuietMember[] = everyone
+      .filter((u) => (u.groups || []).includes("Student"))
+      .map((u) => {
+      const record = points.find((p) => p.user === u.id);
+      const lastActivityAt = latestActivityDate(record?.activities);
+      const since = lastActivityAt ?? u.date_joined;
+      const last = new Date(since);
+      const weeks = Number.isNaN(last.getTime())
+        ? null
+        : Math.floor((Date.now() - last.getTime()) / 86_400_000 / 7);
+
+      return {
+        id: u.id,
+        username: u.username,
+        fullName: `${u.first_name} ${u.last_name}`.trim() || u.username,
+        supervisorName: u.supervisor ? (nameOf.get(u.supervisor) ?? u.supervisor) : null,
+        dateJoined: u.date_joined,
+        lastActivityAt,
+        weeksSilent: weeks,
+      };
+    });
+
+    // Longest silence first — the members furthest from the maqra'a lead the list
+    members.sort((a, b) => (b.weeksSilent ?? 0) - (a.weeksSilent ?? 0));
+
+    return { success: true, data: members };
+  } catch (error) {
+    console.error("Error fetching quiet members:", error);
+    return { success: false, error: "تعذّر تحميل متابعة الأعضاء" };
+  }
+}
+
+// ===============================
 // Get Supervised Students (Moderator only)
 // ===============================
 
@@ -349,12 +432,12 @@ export async function getSupervisedStudents(
     const token = await getToken();
     if (!token) throw new Error("No access token");
 
-    const { start, end } = getCurrentHijriWeekRange();
+    const { start, end } = getLastSevenDays();
 
     // Students supervised by this moderator, their all-time points, this week's
     // activity, and this week's recitation on its own — the last one answers
     // "who has not recited yet", which is the supervisor's actual job.
-    const [data, pointsData, weekPointsData, weekRecitationData] = await Promise.all([
+    const [data, pointsData, weekPointsData, weekScopedData] = await Promise.all([
       fetchJson<{ results: ApiUser[] }>(
         `${API_BASE}api/v1/users/?supervisor=${encodeURIComponent(supervisorUsername)}&group=Student`,
         token,
@@ -368,7 +451,7 @@ export async function getSupervisedStudents(
         token,
       ),
       fetchJson<{ results: ApiPoints[] } | ApiPoints[]>(
-        `${API_BASE}api/v1/users/points/?category=${CAT_RECITATION}&date_after=${start}&date_before=${end}`,
+        `${API_BASE}api/v1/users/points/?date_after=${start}&date_before=${end}`,
         token,
       ),
     ]);
@@ -378,12 +461,12 @@ export async function getSupervisedStudents(
 
     const allPoints = normalize(pointsData);
     const weekPoints = normalize(weekPointsData);
-    const weekRecitation = normalize(weekRecitationData);
+    const weekScoped = normalize(weekScopedData);
 
     const students = data.results.map((student) => {
       const pointsInfo = allPoints.find((p) => p.user === student.id);
       const weekInfo = weekPoints.find((p) => p.user === student.id);
-      const recitationInfo = weekRecitation.find((p) => p.user === student.id);
+      const scopedInfo = weekScoped.find((p) => p.user === student.id);
       return {
         id: student.id,
         username: student.username,
@@ -394,7 +477,9 @@ export async function getSupervisedStudents(
         activities_count: pointsInfo?.activities?.length ?? 0,
         weekly_activities_count: weekInfo?.activities?.length ?? 0,
         date_joined: student.date_joined,
-        recited_this_week: (recitationInfo?.activities?.length ?? 0) > 0,
+        recited_this_week: (scopedInfo?.activities ?? []).some((a) =>
+          SUPERVISOR_MANAGED_CATEGORY_IDS.includes(a.category),
+        ),
         last_activity_at: latestActivityDate(pointsInfo?.activities),
       };
     });

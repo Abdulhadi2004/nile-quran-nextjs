@@ -60,6 +60,18 @@ export interface SupervisedStudent {
 // an administrator is told because they are the one who can reach out.
 export const INACTIVITY_ALERT_WEEKS = 8;
 
+// Half that, and the administrator is told without being asked to act yet
+export const INACTIVITY_NOTICE_WEEKS = 4;
+
+// Weeks a member has been silent, measured from their last activity, or from the
+// day they joined when they have never recorded one. Null when neither is known.
+export function weeksSilent(
+  lastActivityAt: string | null,
+  dateJoined?: string | null,
+): number | null {
+  return weeksSinceActivity(lastActivityAt ?? dateJoined ?? null);
+}
+
 export function weeksSinceActivity(lastActivityAt: string | null): number | null {
   if (!lastActivityAt) return null;
   const last = new Date(lastActivityAt);
@@ -174,7 +186,7 @@ export function getVisibility(
     case "Supervisor":
       return {
         showEmail: false,
-        showDetailedActivities: false, // overridden per-relationship in page
+        showDetailedActivities: true,
         showSupervisor: true,
         showReferrer: false,
         showDateJoined: true,
@@ -184,10 +196,10 @@ export function getVisibility(
     case "Student":
       return {
         showEmail: false,
-        showDetailedActivities: true, // students can see other students' activities
+        showDetailedActivities: true,
         showSupervisor: true,
         showReferrer: false,
-        showDateJoined: false,
+        showDateJoined: true,
         showPoints: true,
       };
   }

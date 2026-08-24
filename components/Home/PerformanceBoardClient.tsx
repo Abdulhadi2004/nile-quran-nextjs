@@ -456,7 +456,7 @@ function PodiumCard({
 
       {/* Name */}
       <Link
-        href={`/profile/${user.id}`}
+        href={`/profile/${encodeURIComponent(user.username)}`}
         className={`${tajawal.className} text-xs md:text-sm font-bold text-[#043F2E] text-center truncate w-full px-1 hover:underline`}
         title={user.name}
       >
@@ -541,7 +541,7 @@ function RankRow({
         <div className="flex-1 min-w-0 flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <Link
-              href={`/profile/${user.id}`}
+              href={`/profile/${encodeURIComponent(user.username)}`}
               className={`${tajawal.className} text-sm font-bold truncate hover:text-[#065f46] hover:underline ${
                 highlight ? "text-[#043F2E]" : "text-[#043F2E]"
               }`}

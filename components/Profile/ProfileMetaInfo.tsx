@@ -35,27 +35,30 @@ export default function ProfileMetaInfo({
     linkHref?: string;
   }> = [
     {
-      show: visibility.showSupervisor,
+      // Only when there is one to name. The header states the supervisor for a
+      // member who has one, so this row exists for the screens that have no header
+      // statement — and an empty row saying "بدون مشرف" is a fact nobody needs.
+      show: visibility.showSupervisor && Boolean(supervisor),
       icon: <UserCheck className="w-4 h-4" strokeWidth={2.2} />,
       label: "المشرف",
-      value: supervisor?.fullName || "بدون مشرف",
-      linkHref: supervisor ? `/profile/${supervisor.id}` : undefined,
+      value: supervisor?.fullName ?? "",
+      linkHref: supervisor ? `/profile/${encodeURIComponent(supervisor.username)}` : undefined,
     },
     {
-      show: visibility.showReferrer,
+      show: visibility.showReferrer && Boolean(referrer),
       icon: <UserPlus className="w-4 h-4" strokeWidth={2.2} />,
       label: "بدعوة من",
-      value: referrer?.fullName || "غير محدد",
-      linkHref: referrer ? `/profile/${referrer.id}` : undefined,
+      value: referrer?.fullName ?? "",
+      linkHref: referrer ? `/profile/${encodeURIComponent(referrer.username)}` : undefined,
     },
     {
-      show: visibility.showEmail,
+      show: visibility.showEmail && Boolean(email),
       icon: <Mail className="w-4 h-4" strokeWidth={2.2} />,
       label: "البريد الإلكتروني",
       value: email,
     },
     {
-      show: visibility.showDateJoined,
+      show: visibility.showDateJoined && Boolean(dateJoined),
       icon: <Calendar className="w-4 h-4" strokeWidth={2.2} />,
       label: "تاريخ الانضمام",
       value: formatHijriDate(dateJoined),
@@ -70,18 +73,21 @@ export default function ProfileMetaInfo({
       {visibleItems.map((item) => {
         const content = (
           <div
-            className={`flex items-center gap-3 bg-[#F7FBEA] rounded-xl border border-[#043F2E]/8 px-4 py-3 transition-colors ${
-              item.linkHref ? "hover:border-[#043F2E]/30 hover:bg-white cursor-pointer" : ""
+            className={`flex items-center gap-3 bg-[#F7FBEA] rounded-2xl border border-[#043F2E]/8 px-4 py-3 h-full transition-colors motion-reduce:transition-none ${
+              item.linkHref ? "group-hover:border-[#043F2E]/30 group-hover:bg-white" : ""
             }`}
           >
-            <div className="w-8 h-8 rounded-lg bg-[#043F2E]/5 flex items-center justify-center shrink-0 text-[#043F2E]/70">
+            <div
+              className="w-9 h-9 rounded-lg bg-white flex items-center justify-center shrink-0 text-[#043F2E]/70"
+              aria-hidden="true"
+            >
               {item.icon}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className={`${tajawal.className} text-[11px] font-medium text-[#043F2E]/50`}>
+              <span className={`${tajawal.className} text-[11px] font-medium text-[#043F2E]/60`}>
                 {item.label}
               </span>
-              <span className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate ${item.linkHref ? "hover:underline" : ""}`}>
+              <span className={`${tajawal.className} text-sm font-bold text-[#043F2E] truncate ${item.linkHref ? "group-hover:underline" : ""}`}>
                 {item.value}
               </span>
             </div>
@@ -90,7 +96,11 @@ export default function ProfileMetaInfo({
 
         if (item.linkHref) {
           return (
-            <Link key={item.label} href={item.linkHref} className="block">
+            <Link
+              key={item.label}
+              href={item.linkHref}
+              className="group block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2"
+            >
               {content}
             </Link>
           );
