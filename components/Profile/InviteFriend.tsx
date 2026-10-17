@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Lalezar, Tajawal } from "next/font/google";
 import { AlertCircle, Check, Copy, Link2, UserPlus, X } from "lucide-react";
 import { toArabicDigits } from "@/lib/utils";
+import Link from "next/link";
 
 const lalezar = Lalezar({ subsets: ["arabic"], weight: "400" });
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
@@ -12,12 +13,24 @@ interface Props {
   username: string;
 }
 
+const CONTACT = { name: "محمد حلمي", username: "mhelmy" };
+
 const STEPS = [
   {
     title: "أرسل لصديقك رابط الدعوة",
   },
   {
-    title: "اطلب منه التواصل مع محمد حلمي",
+    title: (
+      <>
+        اطلب منه التواصل مع{" "}
+        <Link
+          href={`/profile/${encodeURIComponent(CONTACT.username)}`}
+          className="underline underline-offset-6 hover:text-[#043F2E]/70 transition-colors rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#043F2E] focus-visible:ring-offset-2"
+        >
+          {CONTACT.name}
+        </Link>
+      </>
+    ),
   },
 ];
 
@@ -103,7 +116,7 @@ function InviteModal({ username, onClose }: Props & { onClose: () => void }) {
         {/* Steps */}
         <ol className="flex flex-col gap-3">
           {STEPS.map((step, i) => (
-            <li key={step.title} className="flex items-start gap-3">
+            <li key={i} className="flex items-start gap-3">
               <span
                 className={`${lalezar.className} w-7 h-7 shrink-0 rounded-lg bg-[#BEE663] text-[#043F2E] flex items-center justify-center text-sm`}
               >
