@@ -174,7 +174,7 @@ export async function signup(values: SignupValues): Promise<{ errors: FormErrors
       last_name: lastName,
       email: email.toLowerCase(),
       password,
-      referrer: referrer.toLowerCase(),
+      referrer,
       username,
     });
 
