@@ -24,6 +24,7 @@ export interface LibraryItem {
   categories: readonly LibraryCategoryId[];
   text: string;
   author?: string;
+  cover?: string;
   download?: readonly LibraryLink[];
   purchase?: readonly LibraryPurchase[];
 }
@@ -63,6 +64,16 @@ export function libraryCategoryLabel(id: LibraryCategoryId): string {
   return LIBRARY_CATEGORIES.find((category) => category.id === id)?.label ?? id;
 }
 
+export function youtubePlaylistId(url: string | null): string | null {
+  if (!url) return null;
+  const match = url.match(/[?&]list=([^&]+)/);
+  return match?.[1] ?? null;
+}
+
+export function usesPrivateChannel(item: LibraryItem): boolean {
+  return item.download?.some((link) => link.private) ?? false;
+}
+
 // Search ignores raw URLs. Alef variants, ta marbuta, and alef maqsura fold together,
 // and tashkeel is stripped, so a typed query still hits the original message.
 export function normalizeLibraryQuery(value: string): string {
@@ -94,4 +105,28 @@ export function filterLibraryItems(
     const haystack = normalizeLibraryQuery(`${item.title} ${threadLabels} ${item.text}`);
     return haystack.includes(needle);
   });
+}
+
+export function libraryExcerpt(text: string): string {
+  return text
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/@everyone/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function getLibraryItem(id: string): LibraryItem | undefined {
+  return libraryItems.find((item) => item.id === id);
+}
+
+export function relatedLibraryItems(item: LibraryItem, limit = 2): LibraryItem[] {
+  const sameSection = libraryItems.filter(
+    (other) =>
+      other.id !== item.id && other.categories.some((category) => item.categories.includes(category)),
+  );
+  const pool =
+    sameSection.length > 0
+      ? sameSection
+      : libraryItems.filter((other) => other.id !== item.id && other.type === item.type);
+  return pool.slice(0, limit);
 }
