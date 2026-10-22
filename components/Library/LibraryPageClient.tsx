@@ -46,7 +46,7 @@ export default function LibraryPageClient() {
         />
       </PageHero>
 
-      <div dir="rtl" className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10 md:px-10 md:py-14">
+      <div dir="rtl" className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-5 px-4 py-6 sm:gap-6 sm:px-6 sm:py-10 md:px-10 md:py-14">
         <div className="relative">
           <Search
             className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#043F2E]/50"
@@ -63,8 +63,8 @@ export default function LibraryPageClient() {
         </div>
 
         <section>
-          <h2 className={`${tajawal.className} mb-3 text-sm font-bold text-[#043F2E]/60`}>الأقسام</h2>
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5" role="group" aria-label="القسم">
+          <h2 className={`${tajawal.className} mb-2 text-sm font-bold text-[#043F2E]/60 sm:mb-3`}>الأقسام</h2>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 lg:grid-cols-5" role="group" aria-label="القسم">
             <SectionButton
               active={category === null}
               label="الكل"
@@ -84,7 +84,7 @@ export default function LibraryPageClient() {
         </section>
 
         <section>
-          <h2 className={`${tajawal.className} mb-3 text-sm font-bold text-[#043F2E]/60`}>النوع</h2>
+          <h2 className={`${tajawal.className} mb-2 text-sm font-bold text-[#043F2E]/60 sm:mb-3`}>النوع</h2>
           <div className="flex flex-wrap gap-2" role="group" aria-label="النوع">
             {LIBRARY_TAGS.map((item) => {
               const active = tag === item.id;
@@ -94,7 +94,7 @@ export default function LibraryPageClient() {
                   type="button"
                   aria-pressed={active}
                   onClick={() => setTag((current) => (current === item.id ? null : item.id))}
-                  className={`${tajawal.className} inline-flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-bold ${
+                  className={`${tajawal.className} inline-flex min-h-10 items-center gap-1.5 rounded-full border px-3.5 text-[13px] font-bold sm:min-h-8 sm:px-2.5 sm:text-xs ${
                     active
                       ? "border-[#043F2E] bg-[#043F2E] text-white"
                       : "border-[#043F2E]/10 bg-white text-[#043F2E]"
@@ -106,7 +106,7 @@ export default function LibraryPageClient() {
               );
             })}
           </div>
-          <p className={`${tajawal.className} mt-2 text-sm text-[#043F2E]/60`}>
+          <p className={`${tajawal.className} mt-2 text-[13px] leading-6 text-[#043F2E]/60 sm:text-sm`}>
             اختيار النوع ليس لازمًا. إن اخترته، اضغطه مرة أخرى لإزالته.
           </p>
         </section>
@@ -150,12 +150,12 @@ function SectionButton({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`${tajawal.className} min-h-16 rounded-2xl border px-3 py-3 text-right text-sm font-bold ${
+      className={`${tajawal.className} min-h-11 w-full rounded-2xl border px-2.5 py-2 text-right text-[13px] font-bold leading-5 sm:min-h-16 sm:px-3 sm:py-3 sm:text-sm ${
         active ? "border-[#043F2E] bg-[#043F2E] text-white" : "border-[#043F2E]/10 bg-white text-[#043F2E]"
       }`}
     >
-      <span className="block">{label}</span>
-      <span className={`mt-1 block text-xs ${active ? "text-[#BEE663]" : "text-[#043F2E]/50"}`}>
+      <span className="block break-words">{label}</span>
+      <span className={`mt-0.5 block text-[11px] sm:mt-1 sm:text-xs ${active ? "text-[#BEE663]" : "text-[#043F2E]/50"}`}>
         {formatArabicNumber(count)} عنصر
       </span>
     </button>

@@ -60,6 +60,12 @@ export function libraryLinkLabel(type: LibraryType): string {
   return LINK_LABEL[type];
 }
 
+export function linkActionLabel(url: string): string {
+  if (/youtu\.?be|youtube\.com/i.test(url)) return "شاهد";
+  if (/goodreads\.com|archive\.org|t\.me/i.test(url)) return "اقرأ الكتاب";
+  return "انتقل للموقع";
+}
+
 export function libraryCategoryLabel(id: LibraryCategoryId): string {
   return LIBRARY_CATEGORIES.find((category) => category.id === id)?.label ?? id;
 }

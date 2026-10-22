@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { Lalezar, Tajawal } from "next/font/google";
 import { ChevronRight } from "lucide-react";
-import LibraryCard from "@/components/Library/LibraryCard";
+import LibraryCard, { MixedTitle } from "@/components/Library/LibraryCard";
 import {
   TELEGRAM_CHANNEL,
   libraryCategoryLabel,
-  libraryLinkLabel,
   libraryTypeLabel,
+  linkActionLabel,
   usesPrivateChannel,
   youtubePlaylistId,
   type LibraryItem,
@@ -30,7 +30,7 @@ export default function LibraryItemClient({
 
   return (
     <div className="min-h-screen w-full bg-[#EBF0EB]">
-      <div dir="rtl" className="mx-auto flex max-w-6xl flex-col px-6 py-8 md:px-10 md:py-12">
+      <div dir="rtl" className="mx-auto flex w-full min-w-0 max-w-6xl flex-col px-4 py-6 sm:px-6 sm:py-8 md:px-10 md:py-12">
         <Link
           href="/library"
           className={`${tajawal.className} mb-4 inline-flex min-h-11 w-fit items-center gap-2 rounded-2xl border border-[#043F2E]/15 bg-white px-4 text-sm font-bold text-[#043F2E]`}
@@ -40,11 +40,9 @@ export default function LibraryItemClient({
         </Link>
 
         <article
-          className={`flex flex-col gap-5 rounded-3xl border border-[#043F2E]/10 bg-white p-4 md:p-5 ${
-            isPlayer ? "lg:flex-row lg:items-start" : "lg:flex-row lg:items-start"
-          }`}
+          className="flex flex-col gap-5 rounded-3xl border border-[#043F2E]/10 bg-white p-4 md:p-5 lg:flex-row lg:items-start"
         >
-          <div className={isPlayer ? "min-w-0 flex-[1.15]" : "shrink-0"}>
+          <div className={isPlayer ? "min-w-0 w-full flex-[1.15]" : "w-full min-w-0 shrink-0 lg:w-auto"}>
             {isPlayer ? (
               <iframe
                 className="aspect-video w-full rounded-2xl border-0 bg-[#043F2E]"
@@ -59,23 +57,28 @@ export default function LibraryItemClient({
                 alt=""
                 className={
                   item.type === "book"
-                    ? "m-2.5 h-auto max-h-60 w-auto object-contain"
-                    : "h-auto w-full max-w-md rounded-xl object-contain"
+                    ? "m-2.5 h-auto max-h-52 w-auto max-w-full object-contain sm:max-h-60"
+                    : "h-auto w-full max-w-full rounded-xl object-contain sm:max-w-md"
                 }
               />
             ) : null}
           </div>
 
           <div className="min-w-0 flex-1">
-            <p className={`${tajawal.className} flex flex-wrap gap-2 text-xs font-bold`}>
-              <span className="rounded-full bg-[#F7FBEA] px-2 py-1">{libraryTypeLabel(item.type)}</span>
+            <h1>
+              <MixedTitle
+                text={item.title}
+                className={`${lalezar.className} block text-2xl leading-snug text-[#043F2E] sm:text-3xl`}
+              />
+            </h1>
+            <p className={`${tajawal.className} mt-3 flex flex-wrap gap-2 text-[13px] font-bold sm:text-xs`}>
+              <span className="rounded-full bg-[#F7FBEA] px-2.5 py-1">{libraryTypeLabel(item.type)}</span>
               {item.categories.map((id) => (
-                <span key={id} className="rounded-full bg-[#F7FBEA] px-2 py-1">
+                <span key={id} className="rounded-full bg-[#F7FBEA] px-2.5 py-1">
                   {libraryCategoryLabel(id)}
                 </span>
               ))}
             </p>
-            <h1 className={`${lalezar.className} mt-2 text-3xl leading-snug text-[#043F2E]`}>{item.title}</h1>
             {item.type === "book" ? (
               <p
                 role="note"
@@ -85,15 +88,13 @@ export default function LibraryItemClient({
                 يقدر على الشراء.
               </p>
             ) : null}
-            <p className={`${tajawal.className} mt-4 whitespace-pre-wrap text-sm leading-8 text-[#043F2E]/80`}>
-              {item.text}
-            </p>
+            <MessageText text={item.text} />
             <ItemLinks item={item} />
             {usesPrivateChannel(item) ? (
-              <p className={`${tajawal.className} mt-3 text-sm leading-7 text-[#043F2E]/80`}>
+              <div className={`${tajawal.className} mt-4 flex flex-col items-start gap-2 rounded-2xl bg-[#F7FBEA] p-3 text-[15px] leading-7 text-[#043F2E] sm:text-sm`}>
                 <QuietLink href={TELEGRAM_CHANNEL.invite}>انضم إلى القناة أولًا</QuietLink>
-                <span className="ms-2">القناة خاصة، ولن يُفتح رابط التحميل قبل الانضمام إليها.</span>
-              </p>
+                <p>القناة خاصة، ولن يُفتح رابط التحميل قبل الانضمام إليها.</p>
+              </div>
             ) : null}
           </div>
         </article>
@@ -116,13 +117,13 @@ export default function LibraryItemClient({
 function ItemLinks({ item }: { item: LibraryItem }) {
   const downloads = item.download ?? [];
   const purchases = item.purchase ?? [];
-  const mainLabel = item.url?.includes("goodreads.com") ? "على Goodreads" : libraryLinkLabel(item.type);
+  const mainLabel = item.url ? linkActionLabel(item.url) : libraryTypeLabel(item.type);
 
   return (
     <div className="mt-4 flex flex-col items-start gap-2">
       {item.url && item.type !== "playlist" ? <QuietLink href={item.url}>{mainLabel}</QuietLink> : null}
       {item.url && item.type === "playlist" && !youtubePlaylistId(item.url) ? (
-        <QuietLink href={item.url}>{libraryLinkLabel(item.type)}</QuietLink>
+        <QuietLink href={item.url}>{linkActionLabel(item.url)}</QuietLink>
       ) : null}
       {downloads.map((link) => (
         <QuietLink key={link.url} href={link.url}>
@@ -138,6 +139,26 @@ function ItemLinks({ item }: { item: LibraryItem }) {
   );
 }
 
+function MessageText({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/\S+)/g).filter((part) => part.length > 0);
+  const hasComment = parts.some((part) => !part.startsWith("http") && part.trim().length > 0);
+  if (!hasComment) return null;
+
+  return (
+    <p className={`${tajawal.className} mt-4 whitespace-pre-wrap text-[15px] font-normal leading-8 text-[#043F2E]/80 sm:text-sm`}>
+      {parts.map((part, index) =>
+        part.startsWith("http") ? (
+          <span key={`${part}-${index}`} className="mx-1 inline-block">
+            <QuietLink href={part}>{linkActionLabel(part)}</QuietLink>
+          </span>
+        ) : (
+          <span key={index}>{part}</span>
+        ),
+      )}
+    </p>
+  );
+}
+
 function downloadCaption(link: LibraryLink, total: number): string {
   if (total > 1) return `اقرأ مجانًا — ${link.label}`;
   return "اقرأ مجانًا";
@@ -149,7 +170,7 @@ function QuietLink({ href, children }: { href: string; children: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className={`${tajawal.className} text-sm font-bold text-[#043F2E] underline underline-offset-4`}
+      className={`${tajawal.className} text-[15px] font-medium text-[#043F2E] underline underline-offset-4 sm:text-sm`}
     >
       {children}
     </a>
